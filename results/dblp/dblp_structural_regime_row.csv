@@ -1,0 +1,2 @@
+Dataset,Nodes,Edges,Labels,Conductance,Weighted Conductance,Ground-truth Modularity,Overlap Fraction,Best Method,Best ARI,Best NMI
+DBLP,4508,12863,25,0.0231959055157583,0.01513865253110513,0.9167924522930821,0.007985803016858917,ORC-only + Leiden,0.554225692195306,0.8007128221801368

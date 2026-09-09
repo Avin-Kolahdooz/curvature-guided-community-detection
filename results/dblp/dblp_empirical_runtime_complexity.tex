@@ -1,0 +1,13 @@
+\begin{table}
+\caption{Empirical runtime and graph reduction on the DBLP benchmark.}
+\label{tab:dblp_empirical_complexity}
+\begin{tabular}{llllrrrrr}
+\toprule
+Method & ARI & NMI & Runtime (s) & Input Nodes & Input Edges & Output Nodes & Output Edges & Edge Reduction (%) \\
+\midrule
+LRC-only & 0.187 ± 0.005 & 0.539 ± 0.003 & 0.10 ± 0.00 & 4508 & 12863 & 465 & 1175 & 90.870000 \\
+ORC-only & 0.549 ± 0.024 & 0.794 ± 0.005 & 27.68 ± 0.01 & 4508 & 12863 & 4508 & 12863 & 0.000000 \\
+LRC→ORC combo & 0.471 ± 0.019 & 0.783 ± 0.007 & 27.71 ± 0.14 & 4508 & 12863 & 4060 & 11206 & 12.880000 \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,6 @@
+Method,Main Operations,Theoretical Complexity
+Plain Louvain,Community detection,$O(m)$
+Plain Leiden,Community detection,$O(m)$
+LRC-only,LRC computation + pruning + community detection,$O(md + m\log m)$
+ORC-only,Ricci flow + community detection,$O(Tmd)$
+LRC$ightarrow$ORC combo,LRC computation + pruning + Ricci flow + community detection,$O(md + m\log m + Tm'd)$

@@ -1,0 +1,2 @@
+Dataset,Nodes,Edges,Ground-truth Labels,Mean Conductance,Weighted Conductance,Mean BTD,Weighted BTD,Mean Internal Density,Weighted Internal Density,Overlap Fraction
+DBLP,4508,12863,25,0.0232,0.0151,1.8691,1.7072,0.0572,0.0342,0.008

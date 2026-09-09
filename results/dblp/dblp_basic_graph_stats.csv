@@ -1,0 +1,2 @@
+dataset,nodes,edges,density,avg_degree,min_degree,max_degree,avg_clustering,components,gcc_nodes,gcc_edges,avg_shortest_path,diameter
+DBLP,4508,12863,0.0012661955995100986,5.706743566992015,1.0,50.0,0.6999254045312961,1,4508,12863,12.053595816347203,33
