@@ -1,0 +1,2 @@
+Dataset,Nodes,Edges,Ground-truth Labels,Density,Average Degree,Average Clustering,Mean Conductance,Median Conductance,Weighted Conductance,Mean BTD,Median BTD,Weighted BTD,Mean Internal Density,Weighted Internal Density,Overlap Fraction,Ground-truth Modularity
+YouTube,1760,5600,23,0.0036,6.3636,0.2658,0.152,0.1324,0.1342,1.6844,1.8432,2.4319,0.1017,0.0559,0.0193,0.5993
