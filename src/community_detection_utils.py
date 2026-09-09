@@ -426,6 +426,49 @@ def run_orc_flow_gcc(
     return orc.G.copy()
 
 
+
+def run_orc_flow_components(
+    graph: nx.Graph,
+    alpha: float = 0.5,
+    iterations: int = 5,
+    method: str = "Sinkhorn",
+    weight: str = "weight",
+    verbose: str = "ERROR",
+) -> nx.Graph:
+    """
+    Run Ollivier-Ricci flow separately on every connected component.
+
+    All connected components are preserved. Isolated nodes are retained
+    unchanged.
+    """
+    if graph.number_of_nodes() == 0:
+        return graph.copy()
+
+    result = nx.Graph()
+    result.graph.update(graph.graph)
+
+    for component_nodes in nx.connected_components(graph):
+        subgraph = graph.subgraph(component_nodes).copy()
+
+        # Preserve isolated nodes / components without edges.
+        if subgraph.number_of_edges() == 0:
+            result = nx.compose(result, subgraph)
+            continue
+
+        flowed = run_orc_flow_gcc(
+            subgraph,
+            alpha=alpha,
+            iterations=iterations,
+            method=method,
+            weight=weight,
+            verbose=verbose,
+        )
+
+        result = nx.compose(result, flowed)
+
+    return result
+
+
 # ============================================================
 # 7. PREPARE THE THREE EXPERIMENTAL GRAPHS
 # ============================================================
@@ -436,7 +479,7 @@ def prepare_lrc_graph(
     lrc_attribute: str = "LRC",
     print_distribution: bool = False,
 ) -> Dict[str, Any]:
-    """Compute LRC, prune low-LRC edges, and retain the GCC."""
+    """Compute LRC, prune low-LRC edges, and retain all components."""
     start = time.perf_counter()
 
     graph_lrc = graph.copy()
@@ -458,7 +501,7 @@ def prepare_lrc_graph(
         pct=lrc_pct,
     )
 
-    final_graph = get_gcc(pruned_graph)
+    final_graph = pruned_graph
     prep_time = time.perf_counter() - start
 
     return {
@@ -483,10 +526,10 @@ def prepare_orc_graph(
     method: str = "Sinkhorn",
     weight: str = "weight",
 ) -> Dict[str, Any]:
-    """Run ORC Ricci flow on the graph and retain the GCC."""
+    """Run ORC Ricci flow while retaining all connected components."""
     start = time.perf_counter()
 
-    flow_graph = run_orc_flow_gcc(
+    flow_graph = run_orc_flow_components(
         graph,
         alpha=alpha,
         iterations=iterations,
@@ -494,7 +537,7 @@ def prepare_orc_graph(
         weight=weight,
     )
 
-    final_graph = get_gcc(flow_graph)
+    final_graph = flow_graph
     prep_time = time.perf_counter() - start
 
     return {
@@ -523,7 +566,7 @@ def prepare_combo_graph(
     lrc_attribute: str = "LRC",
     orc_attribute: str = "ricciCurvature",
 ) -> Dict[str, Any]:
-    """Run LRC pruning, ORC Ricci flow, ORC pruning, and retain the GCC."""
+    """Run LRC pruning, component-wise ORC flow, and ORC pruning while retaining all components."""
     start = time.perf_counter()
 
     graph_lrc = graph.copy()
@@ -535,10 +578,8 @@ def prepare_combo_graph(
         pct=lrc_pct,
     )
 
-    lrc_gcc = get_gcc(after_lrc)
-
-    flow_graph = run_orc_flow_gcc(
-        lrc_gcc,
+    flow_graph = run_orc_flow_components(
+        after_lrc,
         alpha=alpha,
         iterations=iterations,
         method=method,
@@ -551,7 +592,7 @@ def prepare_combo_graph(
         pct=orc_pct,
     )
 
-    final_graph = get_gcc(after_orc)
+    final_graph = after_orc
     prep_time = time.perf_counter() - start
 
     return {
@@ -1108,6 +1149,7 @@ __all__ = [
     "compute_LRC",
     "prune_by_percentile",
     "run_orc_flow_gcc",
+    "run_orc_flow_components",
     "prepare_lrc_graph",
     "prepare_orc_graph",
     "prepare_combo_graph",
