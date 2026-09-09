@@ -1,0 +1,9 @@
+numpy
+pandas
+networkx
+matplotlib
+scipy
+scikit-learn
+python-louvain
+GraphRicciCurvature
+jupyter
