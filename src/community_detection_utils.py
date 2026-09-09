@@ -389,7 +389,6 @@ def prune_by_percentile(
         ]
 
     output.remove_edges_from(to_drop)
-    output.remove_nodes_from(list(nx.isolates(output)))
 
     return output, cutoff, len(to_drop)
 
