@@ -5,5 +5,8 @@ matplotlib
 scipy
 scikit-learn
 python-louvain
+python-igraph
+leidenalg
 GraphRicciCurvature
+tqdm
 jupyter

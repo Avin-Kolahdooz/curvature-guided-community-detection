@@ -1,0 +1,23 @@
+name: curvature-repo
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - networkx
+  - matplotlib
+  - scipy
+  - scikit-learn
+  - python-igraph
+  - leidenalg
+  - networkit
+  - tqdm
+  - jupyter
+  - pip
+  - pip:
+      - python-louvain
+      - GraphRicciCurvature
