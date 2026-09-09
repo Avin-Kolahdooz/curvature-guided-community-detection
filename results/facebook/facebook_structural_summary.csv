@@ -1,0 +1,2 @@
+Dataset,Nodes,Edges,Ground-truth Labels,Mean Conductance,Weighted Conductance,Mean BTD,Weighted BTD,Mean Internal Density,Weighted Internal Density,Overlap Fraction
+Facebook,1771,42220,39,0.3619,0.2098,23.5245,28.9812,0.3958,0.3182,0.144

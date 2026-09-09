@@ -1,0 +1,9 @@
+Method,Preprocessing Time (s),Community Detection Time (s),Total Runtime (s),Removed LRC Edges,Removed ORC Edges,Output Nodes,Output Edges
+LRC-only,0.624,0.168,0.792,4222.0,0.0,1104.0,17954.0
+LRC-only + Leiden,0.624,0.09,0.714,4222.0,0.0,1104.0,17954.0
+LRC→ORC combo,81.6,0.359,81.959,845.0,826.0,1708.0,40312.0
+LRC→ORC combo + Leiden,81.6,0.185,81.784,845.0,826.0,1708.0,40312.0
+ORC-only,79.048,0.431,79.479,0.0,0.0,1771.0,42220.0
+ORC-only + Leiden,79.048,0.222,79.27,0.0,0.0,1771.0,42220.0
+Plain Leiden,0.0,0.212,0.212,0.0,0.0,1771.0,42220.0
+Plain Louvain,0.0,0.351,0.351,0.0,0.0,1771.0,42220.0

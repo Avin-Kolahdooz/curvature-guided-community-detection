@@ -1,0 +1,2 @@
+dataset,nodes,edges,density,avg_degree,min_degree,max_degree,avg_clustering,components,gcc_nodes,gcc_edges,avg_shortest_path,diameter
+Facebook,1771,42220,0.026937444770900924,47.679277244494635,1.0,473.0,0.601468048423833,1,1771,42220,3.955617656723036,15

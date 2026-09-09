@@ -1,0 +1,13 @@
+\begin{table}
+\caption{Community detection accuracy, runtime, and graph reduction on the Facebook benchmark.}
+\label{tab:facebook_empirical_complexity}
+\begin{tabular}{llllrrrrrr}
+\toprule
+Method & ARI & NMI & Runtime (s) & Input Nodes & Input Edges & Output Nodes & Output Edges & Node Reduction (%) & Edge Reduction (%) \\
+\midrule
+LRC-only & 0.525 ± 0.023 & 0.706 ± 0.006 & 0.79 ± 0.01 & 1771 & 42220 & 1104 & 17954 & 37.660000 & 57.480000 \\
+ORC-only & 0.583 ± 0.002 & 0.735 ± 0.001 & 79.48 ± 0.03 & 1771 & 42220 & 1771 & 42220 & 0.000000 & 0.000000 \\
+LRC→ORC combo & 0.583 ± 0.001 & 0.721 ± 0.001 & 81.96 ± 0.03 & 1771 & 42220 & 1708 & 40312 & 3.560000 & 4.520000 \\
+\bottomrule
+\end{tabular}
+\end{table}
