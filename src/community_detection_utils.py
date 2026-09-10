@@ -285,8 +285,20 @@ def eval_partition(
     nodes = [
         node
         for node in graph.nodes()
-        if label_attribute in graph.nodes[node] and node in partition
+        if label_attribute in graph.nodes[node]
     ]
+
+    missing_nodes = [
+        node
+        for node in nodes
+        if node not in partition
+    ]
+
+    if missing_nodes:
+        raise ValueError(
+            f"{len(missing_nodes)} labeled nodes are missing "
+            "from the detected partition."
+        )
 
     if len(nodes) == 0:
         return np.nan, np.nan, 0
