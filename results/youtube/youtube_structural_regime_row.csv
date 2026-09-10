@@ -1,0 +1,2 @@
+Dataset,Nodes,Edges,Labels,Conductance,Weighted Conductance,BTD,Weighted BTD,Ground-truth Modularity,Overlap Fraction,Best Method,Best ARI,Best NMI
+YouTube,1760,5600,23,0.152,0.1342,1.6844,2.4319,0.5993,0.0193,LRC-only + Leiden,0.7058,0.8122

@@ -1,0 +1,9 @@
+Method,Mean Runtime (s),Speedup vs ORC-only,Runtime Reduction vs ORC-only (%)
+LRC-only,0.163,52.002,98.077
+LRC-only + Leiden,0.107,79.206,98.737
+LRC→ORC combo,8.394,1.007,0.744
+LRC→ORC combo + Leiden,8.291,1.02,1.965
+ORC-only,8.457,1.0,0.0
+ORC-only + Leiden,8.381,1.009,0.905
+Plain Leiden,0.062,135.885,99.264
+Plain Louvain,0.231,36.545,97.264

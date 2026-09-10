@@ -1,0 +1,2 @@
+p_in,p_out,observed_within_edges,observed_between_edges,possible_within_pairs,possible_between_pairs,n_labeled,n_labels
+0.02603755032951441,0.001020739906677268,4184,1416,160691.0,1387229.0,1760,23

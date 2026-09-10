@@ -1,0 +1,2 @@
+dataset,nodes,edges,density,avg_degree,min_degree,max_degree,avg_clustering,components,gcc_nodes,gcc_edges,avg_shortest_path,diameter
+YouTube,1760,5600,0.003617758023670474,6.363636363636363,1.0,321.0,0.2657999554001941,1,1760,5600,4.853372913328855,16
