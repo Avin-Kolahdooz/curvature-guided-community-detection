@@ -85,22 +85,12 @@ Raw datasets are not included in this repository. The experiment notebooks downl
 
 The notebooks download the listed files into the local paths below when they are missing. Dataset terms are governed by the sources linked here; the manuscript does not state separate dataset licenses.
 
-| Dataset | Source files | Local path | Paper references |
+| Dataset | Source files | Local path | BibTeX keys |
 | --- | --- | --- | --- |
-| Amazon | [`com-amazon.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.ungraph.txt.gz); [`com-amazon.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.top5000.cmty.txt.gz) | `data/amazon/` | SNAP dataset metadata [25]; ground-truth community methodology [33] |
-| DBLP | [`com-dblp.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.ungraph.txt.gz); [`com-dblp.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.top5000.cmty.txt.gz) | `data/dblp/` | SNAP dataset metadata [26]; ground-truth community methodology [33] |
-| Facebook | [`facebook_combined.txt.gz`](https://snap.stanford.edu/data/facebook_combined.txt.gz); [`facebook.tar.gz`](https://snap.stanford.edu/data/facebook.tar.gz) (circles) | `data/facebook/` | SNAP dataset [29]; social-circle study [15] |
-| YouTube | [`com-youtube.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.ungraph.txt.gz); [`com-youtube.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.top5000.cmty.txt.gz) | `data/youtube/` | SNAP dataset [28]; network community study [14] |
-
-Dataset-related references from the manuscript:
-
-- [14] Leskovec, J., Lang, K. J., Dasgupta, A., and Mahoney, M. (2009). "Community Structure in Large Networks: Natural Cluster Sizes and the Absence of Large Well-Defined Clusters." *Internet Mathematics*, 6(1), 29-123.
-- [15] Leskovec, J. and McAuley, J. J. (2012). "Learning to Discover Social Circles in Ego Networks." *Advances in Neural Information Processing Systems*.
-- [25] Stanford Network Analysis Project (2024a). [Amazon Product Co-purchasing Network Metadata](https://snap.stanford.edu/data/com-Amazon.html). Accessed 2026-07-03.
-- [26] Stanford Network Analysis Project (2024b). [DBLP Collaboration Network Metadata](https://snap.stanford.edu/data/com-DBLP.html). Accessed 2026-07-03.
-- [28] Stanford Network Analysis Project (2009). [YouTube Social Network Dataset](https://snap.stanford.edu/data/com-Youtube.html). Accessed 2025-12-19.
-- [29] Stanford Network Analysis Project (2012). [Social Circles: Facebook](https://snap.stanford.edu/data/egonets-Facebook.html). Accessed 2025-12-19.
-- [33] Yang, J. and Leskovec, J. (2012). "Defining and Evaluating Network Communities Based on Ground-Truth." In *Proceedings of the ACM SIGKDD Workshop on Mining Data Semantics*, 1-8.
+| Amazon | [`com-amazon.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.ungraph.txt.gz); [`com-amazon.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.top5000.cmty.txt.gz) | `data/amazon/` | `snapAmazon2024`; `YangLeskovec2012GroundTruth` |
+| DBLP | [`com-dblp.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.ungraph.txt.gz); [`com-dblp.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.top5000.cmty.txt.gz) | `data/dblp/` | `snapDBLP2024`; `YangLeskovec2012GroundTruth` |
+| Facebook | [`facebook_combined.txt.gz`](https://snap.stanford.edu/data/facebook_combined.txt.gz); [`facebook.tar.gz`](https://snap.stanford.edu/data/facebook.tar.gz) (circles) | `data/facebook/` | `snapFacebook2012`; `LeskovecMcAuley2012SocialCircles` |
+| YouTube | [`com-youtube.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.ungraph.txt.gz); [`com-youtube.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.top5000.cmty.txt.gz) | `data/youtube/` | `snapYouTube2009`; `LeskovecEtAl2009CommunityStructure` |
 
 ## Reproducing Experiments
 
@@ -139,7 +129,72 @@ For the synthetic verification notebook, `<dataset>` is `synthetic_module_verifi
 }
 ```
 
-Please also cite the original sources of any datasets used.
+### Dataset References
+
+The BibTeX keys in the [Data](#data) table refer to these dataset and benchmark sources:
+
+```bibtex
+@article{LeskovecEtAl2009CommunityStructure,
+  author  = {Leskovec, Jure and Lang, Kevin J. and Dasgupta, Anirban and Mahoney, Michael W.},
+  title   = {{Community Structure in Large Networks: Natural Cluster Sizes and the Absence of Large Well-Defined Clusters}},
+  journal = {Internet Mathematics},
+  year    = {2009},
+  volume  = {6},
+  number  = {1},
+  pages   = {29--123}
+}
+
+@inproceedings{LeskovecMcAuley2012SocialCircles,
+  author    = {Leskovec, Jure and McAuley, Julian J.},
+  title     = {Learning to Discover Social Circles in Ego Networks},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2012}
+}
+
+@misc{snapAmazon2024,
+  author       = {{Stanford Network Analysis Project}},
+  title        = {Amazon Product Co-purchasing Network Metadata},
+  year         = {2024},
+  howpublished = {SNAP},
+  url          = {https://snap.stanford.edu/data/com-Amazon.html},
+  note         = {Accessed 2026-07-03}
+}
+
+@misc{snapDBLP2024,
+  author       = {{Stanford Network Analysis Project}},
+  title        = {DBLP Collaboration Network Metadata},
+  year         = {2024},
+  howpublished = {SNAP},
+  url          = {https://snap.stanford.edu/data/com-DBLP.html},
+  note         = {Accessed 2026-07-03}
+}
+
+@misc{snapYouTube2009,
+  author       = {{Stanford Network Analysis Project}},
+  title        = {YouTube Social Network Dataset},
+  year         = {2009},
+  howpublished = {SNAP},
+  url          = {https://snap.stanford.edu/data/com-Youtube.html},
+  note         = {Accessed 2025-12-19}
+}
+
+@misc{snapFacebook2012,
+  author       = {{Stanford Network Analysis Project}},
+  title        = {Social Circles: Facebook},
+  year         = {2012},
+  howpublished = {SNAP},
+  url          = {https://snap.stanford.edu/data/egonets-Facebook.html},
+  note         = {Accessed 2025-12-19}
+}
+
+@inproceedings{YangLeskovec2012GroundTruth,
+  author    = {Yang, Jaewon and Leskovec, Jure},
+  title     = {Defining and Evaluating Network Communities Based on Ground-Truth},
+  booktitle = {Proceedings of the ACM SIGKDD Workshop on Mining Data Semantics},
+  year      = {2012},
+  pages     = {1--8}
+}
+```
 
 ## License
 
