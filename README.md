@@ -83,14 +83,24 @@ In VS Code, select `cg_community_detection_env` as the notebook kernel.
 
 Raw datasets are not included in this repository. The experiment notebooks download or expect dataset files under local `data/` directories.
 
-<!-- TODO: For each dataset, provide its source URL, exact file/version, preprocessing steps, license or terms, and citation. State whether notebooks download it automatically or require manual download. -->
+The notebooks download the listed files into the local paths below when they are missing. Dataset terms are governed by the sources linked here; the manuscript does not state separate dataset licenses.
 
-| Dataset | Source and version | Local path | Citation / terms |
+| Dataset | Source files | Local path | Paper references |
 | --- | --- | --- | --- |
-| Amazon | TODO | `data/amazon/` | TODO |
-| DBLP | TODO | `data/dblp/` | TODO |
-| Facebook | TODO | `data/facebook/` | TODO |
-| YouTube | TODO | `data/youtube/` | TODO |
+| Amazon | [`com-amazon.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.ungraph.txt.gz); [`com-amazon.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.top5000.cmty.txt.gz) | `data/amazon/` | SNAP dataset metadata [25]; ground-truth community methodology [33] |
+| DBLP | [`com-dblp.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.ungraph.txt.gz); [`com-dblp.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.top5000.cmty.txt.gz) | `data/dblp/` | SNAP dataset metadata [26]; ground-truth community methodology [33] |
+| Facebook | [`facebook_combined.txt.gz`](https://snap.stanford.edu/data/facebook_combined.txt.gz); [`facebook.tar.gz`](https://snap.stanford.edu/data/facebook.tar.gz) (circles) | `data/facebook/` | SNAP dataset [29]; social-circle study [15] |
+| YouTube | [`com-youtube.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.ungraph.txt.gz); [`com-youtube.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.top5000.cmty.txt.gz) | `data/youtube/` | SNAP dataset [28]; network community study [14] |
+
+Dataset-related references from the manuscript:
+
+- [14] Leskovec, J., Lang, K. J., Dasgupta, A., and Mahoney, M. (2009). "Community Structure in Large Networks: Natural Cluster Sizes and the Absence of Large Well-Defined Clusters." *Internet Mathematics*, 6(1), 29-123.
+- [15] Leskovec, J. and McAuley, J. J. (2012). "Learning to Discover Social Circles in Ego Networks." *Advances in Neural Information Processing Systems*.
+- [25] Stanford Network Analysis Project (2024a). [Amazon Product Co-purchasing Network Metadata](https://snap.stanford.edu/data/com-Amazon.html). Accessed 2026-07-03.
+- [26] Stanford Network Analysis Project (2024b). [DBLP Collaboration Network Metadata](https://snap.stanford.edu/data/com-DBLP.html). Accessed 2026-07-03.
+- [28] Stanford Network Analysis Project (2009). [YouTube Social Network Dataset](https://snap.stanford.edu/data/com-Youtube.html). Accessed 2025-12-19.
+- [29] Stanford Network Analysis Project (2012). [Social Circles: Facebook](https://snap.stanford.edu/data/egonets-Facebook.html). Accessed 2025-12-19.
+- [33] Yang, J. and Leskovec, J. (2012). "Defining and Evaluating Network Communities Based on Ground-Truth." In *Proceedings of the ACM SIGKDD Workshop on Mining Data Semantics*, 1-8.
 
 ## Reproducing Experiments
 
