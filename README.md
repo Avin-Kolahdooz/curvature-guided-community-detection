@@ -4,7 +4,9 @@ This repository contains code and experiment notebooks for studying curvature-gu
 
 ## Project Status
 
-This repository accompanies the paper in progress "Curvature-Guided Graph Sparsification for Community Detection," which is being prepared for publication. The notebooks and utilities are intended to reproduce the paper's reported experiments. Results may depend on the datasets, package versions, random seeds, and settings documented below.
+This repository accompanies the paper in progress "Curvature-Guided Graph Sparsification for Community Detection," which is being prepared for publication.
+The notebooks and utilities are intended to reproduce the paper's reported experiments.
+Results may depend on the datasets, package versions, random seeds, and settings documented below.
 
 ## Overview
 
@@ -85,10 +87,10 @@ The notebooks download the listed files into the local paths below when they are
 
 | Dataset | Source files | Local path | BibTeX keys |
 | --- | --- | --- | --- |
-| Amazon | [`com-amazon.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.ungraph.txt.gz); [`com-amazon.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.top5000.cmty.txt.gz) | `data/amazon/` | `snapAmazon2024`; `YangLeskovec2012GroundTruth` |
-| DBLP | [`com-dblp.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.ungraph.txt.gz); [`com-dblp.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.top5000.cmty.txt.gz) | `data/dblp/` | `snapDBLP2024`; `YangLeskovec2012GroundTruth` |
-| Facebook | [`facebook_combined.txt.gz`](https://snap.stanford.edu/data/facebook_combined.txt.gz); [`facebook.tar.gz`](https://snap.stanford.edu/data/facebook.tar.gz) (circles) | `data/facebook/` | `snapFacebook2012`; `LeskovecMcAuley2012SocialCircles` |
-| YouTube | [`com-youtube.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.ungraph.txt.gz); [`com-youtube.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.top5000.cmty.txt.gz) | `data/youtube/` | `snapYouTube2009`; `LeskovecEtAl2009CommunityStructure` |
+| Amazon | [`com-amazon.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.ungraph.txt.gz); [`com-amazon.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-amazon.top5000.cmty.txt.gz) | `data/amazon/` | [snapAmazon2024](#snapamazon2024); [YangLeskovec2012GroundTruth](#yangleskovec2012groundtruth) |
+| DBLP | [`com-dblp.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.ungraph.txt.gz); [`com-dblp.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-dblp.top5000.cmty.txt.gz) | `data/dblp/` | [snapDBLP2024](#snapdblp2024); [YangLeskovec2012GroundTruth](#yangleskovec2012groundtruth) |
+| Facebook | [`facebook_combined.txt.gz`](https://snap.stanford.edu/data/facebook_combined.txt.gz); [`facebook.tar.gz`](https://snap.stanford.edu/data/facebook.tar.gz) (circles) | `data/facebook/` | [snapFacebook2012](#snapfacebook2012); [LeskovecMcAuley2012SocialCircles](#leskovecmcauley2012socialcircles) |
+| YouTube | [`com-youtube.ungraph.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.ungraph.txt.gz); [`com-youtube.top5000.cmty.txt.gz`](https://snap.stanford.edu/data/bigdata/communities/com-youtube.top5000.cmty.txt.gz) | `data/youtube/` | [snapYouTube2009](#snapyoutube2009); [LeskovecEtAl2009CommunityStructure](#leskovecetal2009communitystructure) |
 
 ## Reproducing Experiments
 
@@ -129,8 +131,9 @@ For the synthetic verification notebook, `<dataset>` is `synthetic_module_verifi
 
 ### Dataset References
 
-The BibTeX keys in the [Data](#data) table refer to these dataset and benchmark sources:
+The keys linked in the [Data](#data) table jump directly to the corresponding BibTeX entry.
 
+<a id="leskovecetal2009communitystructure"></a>
 ```bibtex
 @article{LeskovecEtAl2009CommunityStructure,
   author  = {Leskovec, Jure and Lang, Kevin J. and Dasgupta, Anirban and Mahoney, Michael W.},
@@ -141,14 +144,20 @@ The BibTeX keys in the [Data](#data) table refer to these dataset and benchmark 
   number  = {1},
   pages   = {29--123}
 }
+```
 
+<a id="leskovecmcauley2012socialcircles"></a>
+```bibtex
 @inproceedings{LeskovecMcAuley2012SocialCircles,
   author    = {Leskovec, Jure and McAuley, Julian J.},
   title     = {Learning to Discover Social Circles in Ego Networks},
   booktitle = {Advances in Neural Information Processing Systems},
   year      = {2012}
 }
+```
 
+<a id="snapamazon2024"></a>
+```bibtex
 @misc{snapAmazon2024,
   author       = {{Stanford Network Analysis Project}},
   title        = {Amazon Product Co-purchasing Network Metadata},
@@ -157,7 +166,10 @@ The BibTeX keys in the [Data](#data) table refer to these dataset and benchmark 
   url          = {https://snap.stanford.edu/data/com-Amazon.html},
   note         = {Accessed 2026-07-03}
 }
+```
 
+<a id="snapdblp2024"></a>
+```bibtex
 @misc{snapDBLP2024,
   author       = {{Stanford Network Analysis Project}},
   title        = {DBLP Collaboration Network Metadata},
@@ -166,7 +178,10 @@ The BibTeX keys in the [Data](#data) table refer to these dataset and benchmark 
   url          = {https://snap.stanford.edu/data/com-DBLP.html},
   note         = {Accessed 2026-07-03}
 }
+```
 
+<a id="snapyoutube2009"></a>
+```bibtex
 @misc{snapYouTube2009,
   author       = {{Stanford Network Analysis Project}},
   title        = {YouTube Social Network Dataset},
@@ -175,7 +190,10 @@ The BibTeX keys in the [Data](#data) table refer to these dataset and benchmark 
   url          = {https://snap.stanford.edu/data/com-Youtube.html},
   note         = {Accessed 2025-12-19}
 }
+```
 
+<a id="snapfacebook2012"></a>
+```bibtex
 @misc{snapFacebook2012,
   author       = {{Stanford Network Analysis Project}},
   title        = {Social Circles: Facebook},
@@ -184,7 +202,10 @@ The BibTeX keys in the [Data](#data) table refer to these dataset and benchmark 
   url          = {https://snap.stanford.edu/data/egonets-Facebook.html},
   note         = {Accessed 2025-12-19}
 }
+```
 
+<a id="yangleskovec2012groundtruth"></a>
+```bibtex
 @inproceedings{YangLeskovec2012GroundTruth,
   author    = {Yang, Jaewon and Leskovec, Jure},
   title     = {Defining and Evaluating Network Communities Based on Ground-Truth},
