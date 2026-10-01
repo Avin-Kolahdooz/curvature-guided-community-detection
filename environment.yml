@@ -1,0 +1,24 @@
+name: cg_community_detection_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - cython
+  - ipykernel
+  - jupyter
+  - leidenalg
+  - matplotlib
+  - networkit
+  - networkx
+  - numpy
+  - pandas
+  - pot
+  - python-igraph
+  - scikit-learn
+  - scipy
+  - tqdm
+  - pip
+  - pip:
+      - GraphRicciCurvature
+      - python-louvain
+      - tabulate
