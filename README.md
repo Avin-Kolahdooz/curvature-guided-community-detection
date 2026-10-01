@@ -57,18 +57,24 @@ Raw datasets are not included in this repository. The experiment notebooks downl
 
 ## Reproducing Experiments
 
-<!-- TODO: Confirm the commands and execution order in a clean environment. Mention which cells download data, expected runtimes, and where outputs are written. -->
+Each notebook discovers the repository root from `environment.yml` and writes generated files to the shared directories listed under [Results](#results). Run cells from top to bottom; the data-loading cells download datasets into `data/<dataset>/` when they are not already present.
 
 1. Complete the installation steps above.
 2. Obtain the datasets as described in [Data](#data).
 3. Open the notebook for the dataset or experiment of interest and run its cells in order.
-4. Find generated outputs at the paths documented in the relevant notebook.
+4. Find generated CSV tables, sensitivity results, and figures in the shared output directories below.
 
 Random seeds, preprocessing choices, algorithm parameters, and evaluation details: <!-- TODO: document or link to the exact configuration used for reported results. -->
 
 ## Results
 
-The `results/` directory contains saved CSV and LaTeX tables. The `figures/` directory contains saved plots.
+The notebooks create these output directories as needed:
+
+- `results/<dataset>/tables/` contains result, structural, and complexity CSV/LaTeX tables.
+- `results/<dataset>/sensitivity/` contains raw and summarized sensitivity CSV files.
+- `figures/<dataset>/` contains generated PNG and PDF figures, including heatmaps.
+
+For the synthetic verification notebook, `<dataset>` is `synthetic_module_verification`.
 
 <!-- TODO: Identify the main result files and explain which experiment/configuration produced them. Add links to the paper and selected figures if useful. -->
 

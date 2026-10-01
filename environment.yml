@@ -18,7 +18,7 @@ dependencies:
   - scipy
   - tqdm
   - pip
+  - jinja2
   - pip:
       - GraphRicciCurvature
       - python-louvain
-      - tabulate
