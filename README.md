@@ -1,8 +1,6 @@
 # Curvature-Guided Community Detection
 
-<!-- TODO: Replace this paragraph with a concise summary of the project, its contribution, and the problem it addresses. -->
-
-This repository contains research code and experiment artifacts for curvature-guided community detection.
+This repository contains code and experiment notebooks for studying curvature-guided graph sparsification as a way to reduce the cost of community detection while preserving community structure.
 
 ## Project Status
 
@@ -12,7 +10,15 @@ This is research software. Results and workflows may depend on the datasets, pac
 
 ## Overview
 
-<!-- TODO: Briefly explain the method, baselines, and evaluation metrics. Link to the paper or preprint when available. -->
+The research evaluates a two-stage sparsification pipeline. First, lower Ricci curvature (LRC), a local combinatorial estimate, filters low-curvature edges. Ollivier-Ricci curvature (ORC) and discrete Ricci flow are then applied to the reduced graph before community detection. The experiments compare LRC-only and ORC-only baselines with the combined LRC-to-ORC method. Louvain is the primary detector; the notebooks also include Leiden comparisons.
+
+The real-world notebooks build labeled benchmark graphs from SNAP's Amazon co-purchase, DBLP collaboration, Facebook ego-network, and YouTube social-network datasets. Because several datasets have overlapping communities, the notebooks select benchmark subsets and assign one ground-truth label per node for ARI/NMI evaluation. They report clustering scores, runtime, graph reduction, and structural summaries, and include parameter-sensitivity analyses with heatmaps. The synthetic notebook generates stochastic block model (SBM) graphs, checks the shared utility implementations against the original experiment, and explores parameter sensitivity.
+
+Notebook guide:
+
+- [Amazon.ipynb](Amazon.ipynb), [DBLP.ipynb](DBLP.ipynb), [Facebook.ipynb](Facebook.ipynb), and [Youtube.ipynb](Youtube.ipynb) construct dataset-specific benchmarks, run the curvature and community-detection comparisons, and analyze structural properties and sensitivity.
+- [Synthetic_Module_Verification.ipynb](Synthetic_Module_Verification.ipynb) verifies the modularized pipeline on controlled SBM graphs and includes additional sensitivity experiments.
+- [community_detection_utils.py](community_detection_utils.py) provides shared dataset-loading, graph-processing, curvature, community-detection, and evaluation functions used by the notebooks.
 
 ## Repository Structure
 
