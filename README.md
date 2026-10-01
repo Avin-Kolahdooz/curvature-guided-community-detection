@@ -57,18 +57,22 @@ This is research software. Results and workflows may depend on the datasets, pac
 
 ## Requirements
 
-- Python: <!-- TODO: Add the tested Python version or supported version range. -->
-- Dependencies: <!-- TODO: Link to `requirements.txt`, `environment.yml`, or another maintained environment file. -->
-- Resources: <!-- TODO: Note expected memory, runtime, and hardware, especially for the larger datasets. -->
+- Python 3.11, as specified in [`environment.yml`](environment.yml).
+- Conda, with packages resolved from `conda-forge` and pip dependencies installed by the environment file.
+- Core dependencies include Jupyter/IPykernel, NumPy, pandas, SciPy, NetworkX, Networkit, igraph/Leiden, scikit-learn, Matplotlib, and tqdm. The environment file also installs `GraphRicciCurvature` and `python-louvain` through pip.
+- No minimum hardware requirements are specified. Memory use and runtime depend on the selected dataset and analysis; the larger real-world graph experiments may be resource-intensive.
 
 ## Installation
 
-<!-- TODO: Add tested setup commands after choosing and adding a dependency manifest. -->
+Create and activate the Conda environment from the repository root:
 
 ```bash
-# TODO: Create and activate the project's environment.
-# TODO: Install dependencies from the dependency manifest.
+conda env create -f environment.yml
+conda activate cg_community_detection_env
+jupyter lab
 ```
+
+In VS Code, select `cg_community_detection_env` as the notebook kernel.
 
 ## Data
 
