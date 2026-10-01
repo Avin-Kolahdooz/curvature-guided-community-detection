@@ -14,18 +14,46 @@ This is research software. Results and workflows may depend on the datasets, pac
 
 <!-- TODO: Briefly explain the method, baselines, and evaluation metrics. Link to the paper or preprint when available. -->
 
-## Repository Contents
+## Repository Structure
 
-| Path | Description |
-| --- | --- |
-| `community_detection_utils.py` | Shared data-loading, graph-processing, and community-detection utilities. |
-| `Amazon.ipynb` | Amazon dataset experiments. |
-| `DBLP.ipynb` | DBLP dataset experiments. |
-| `Facebook.ipynb` | Facebook dataset experiments. |
-| `Youtube.ipynb` | YouTube dataset experiments. |
-| `Synthetic_Module_Verification.ipynb` | Synthetic verification experiments. |
-| `results/` | Saved experiment tables and summaries. |
-| `figures/` | Saved result visualizations. |
+```text
+.
+|-- Amazon.ipynb
+|-- DBLP.ipynb
+|-- Facebook.ipynb
+|-- Youtube.ipynb
+|-- Synthetic_Module_Verification.ipynb
+|-- community_detection_utils.py
+|-- environment.yml
+|-- Template_for_Journal_of_Complex_Networks__COMNET___1_-3.pdf
+|-- data/                         # Created locally as datasets are downloaded
+|   |-- amazon/
+|   |-- dblp/
+|   |-- facebook/
+|   `-- youtube/
+|-- figures/
+|   |-- amazon/
+|   |-- dblp/
+|   |-- facebook/
+|   |-- youtube/
+|   `-- synthetic_module_verification/  # Created when its notebook runs
+`-- results/
+  |-- amazon/                   # Existing result files; reruns create:
+  |   |-- tables/
+  |   `-- sensitivity/
+  |-- dblp/
+  |   |-- tables/
+  |   `-- sensitivity/
+  |-- facebook/
+  |   |-- tables/
+  |   `-- sensitivity/
+  |-- youtube/
+  |   |-- tables/
+  |   `-- sensitivity/
+  `-- synthetic_module_verification/  # Created when its notebook runs
+    |-- tables/
+    `-- sensitivity/
+```
 
 ## Requirements
 
@@ -68,7 +96,7 @@ Random seeds, preprocessing choices, algorithm parameters, and evaluation detail
 
 ## Results
 
-The notebooks create these output directories as needed:
+The notebooks create these output directories as needed. Existing committed result files may remain directly inside their dataset's `results/` folder; new runs use:
 
 - `results/<dataset>/tables/` contains result, structural, and complexity CSV/LaTeX tables.
 - `results/<dataset>/sensitivity/` contains raw and summarized sensitivity CSV files.
