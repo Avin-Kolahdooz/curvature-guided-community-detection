@@ -31,7 +31,6 @@ Notebook guide:
 |-- Synthetic_Module_Verification.ipynb
 |-- community_detection_utils.py
 |-- environment.yml
-|-- Template_for_Journal_of_Complex_Networks__COMNET___1_-3.pdf
 |-- data/                         # Created locally as datasets are downloaded
 |   |-- amazon/
 |   |-- dblp/
