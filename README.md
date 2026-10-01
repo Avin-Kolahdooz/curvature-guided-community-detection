@@ -4,7 +4,7 @@ This repository contains code and experiment notebooks for studying curvature-gu
 
 ## Project Status
 
-This repository accompanies the paper in progress "Curvature-Guided Graph Sparsification for Community Detection," which is being prepared for submission to the *IMA Journal of Complex Networks*. The notebooks and utilities are intended to reproduce the paper's reported experiments. Results may depend on the datasets, package versions, random seeds, and settings documented below.
+This repository accompanies the paper in progress "Curvature-Guided Graph Sparsification for Community Detection," which is being prepared for publication. The notebooks and utilities are intended to reproduce the paper's reported experiments. Results may depend on the datasets, package versions, random seeds, and settings documented below.
 
 ## Overview
 
