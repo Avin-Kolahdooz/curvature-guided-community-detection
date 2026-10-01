@@ -202,4 +202,4 @@ The BibTeX keys in the [Data](#data) table refer to these dataset and benchmark 
 
 ## Contact
 
-<!-- TODO: Add a maintainer contact, lab page, or issue-reporting link. -->
+For questions about the research or this repository, contact the corresponding author and project lead, Avin Kolahdooz, at [akolahdooz@unm.edu](mailto:akolahdooz@unm.edu).
