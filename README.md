@@ -1,12 +1,10 @@
-# Curvature-Guided Community Detection
+# Curvature-Guided Graph Sparsification for Community Detection
 
 This repository contains code and experiment notebooks for studying curvature-guided graph sparsification as a way to reduce the cost of community detection while preserving community structure.
 
 ## Project Status
 
-<!-- TODO: State whether this repository supports reproducing a paper, ongoing research, or general use. -->
-
-This is research software. Results and workflows may depend on the datasets, package versions, random seeds, and settings documented below.
+This repository accompanies the paper in progress "Curvature-Guided Graph Sparsification for Community Detection," which is being prepared for submission to the *IMA Journal of Complex Networks*. The notebooks and utilities are intended to reproduce the paper's reported experiments. Results may depend on the datasets, package versions, random seeds, and settings documented below.
 
 ## Overview
 
@@ -202,4 +200,4 @@ The BibTeX keys in the [Data](#data) table refer to these dataset and benchmark 
 
 ## Contact
 
-For questions about the research or this repository, contact the corresponding author and project lead, Avin Kolahdooz, at [akolahdooz@unm.edu](mailto:akolahdooz@unm.edu).
+For questions about the research or this repository, contact the corresponding author, Avin Kolahdooz, at [akolahdooz@unm.edu](mailto:akolahdooz@unm.edu).
