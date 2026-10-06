@@ -62,14 +62,38 @@ Notebook guide:
 
 ## Requirements
 
-- Python 3.11, as specified in [`environment.yml`](environment.yml).
-- Conda, with packages resolved from `conda-forge` and pip dependencies installed by the environment file.
-- Core dependencies include Jupyter/IPykernel, NumPy, pandas, SciPy, NetworkX, Networkit, igraph/Leiden, scikit-learn, Matplotlib, and tqdm. The environment file also installs `GraphRicciCurvature` and `python-louvain` through pip.
+- Use the Conda environment in [`environment.yml`](environment.yml) to run the notebooks. It specifies Python 3.11.16 and pins the direct dependencies listed below.
+- Conda packages are resolved from `conda-forge`; the packages under `pip:` are installed with pip after the Conda dependencies.
+- The environment file specifies these direct package versions:
+
+| Package | Version | Installer |
+| --- | --- | --- |
+| Python | 3.11.16 | Conda |
+| Cython | 3.3.0 | Conda |
+| ipykernel | 7.4.0 | Conda |
+| Jupyter | 1.1.1 | Conda |
+| leidenalg | 0.12.0 | Conda |
+| Matplotlib | 3.11.2 | Conda |
+| NetworKit | 11.2 | Conda |
+| NetworkX | 3.6.1 | Conda |
+| pandas | 3.0.6 | Conda |
+| POT | 0.9.6.post1 | Conda |
+| python-igraph | 1.0.0 | Conda |
+| scikit-learn | 1.9.1 | Conda |
+| tqdm | 4.70.1 | Conda |
+| pip | 26.2.1 | Conda |
+| Jinja2 | 3.1.6 | Conda |
+| NumPy | 2.2.6 | pip |
+| SciPy | 1.13.1 | pip |
+| GraphRicciCurvature | 0.6.1 | pip |
+| python-louvain | 0.16 | pip |
+
+- These are explicit direct-dependency pins, not a complete cross-platform lockfile: Conda resolves transitive dependencies and platform-specific builds for the machine creating the environment. For exact archival reproduction, preserve the resolved environment export alongside the OS and architecture used.
 - No minimum hardware requirements are specified. Memory use and runtime depend on the selected dataset and analysis; the larger real-world graph experiments may be resource-intensive.
 
 ## Installation
 
-Create and activate the Conda environment from the repository root:
+Create and activate the Conda environment from the repository root, then use it as the notebook kernel:
 
 ```bash
 conda env create -f environment.yml
