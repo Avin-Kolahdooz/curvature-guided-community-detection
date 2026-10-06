@@ -217,7 +217,7 @@ The keys linked in the [Data](#data) table jump directly to the corresponding Bi
 
 ## License
 
-<!-- TODO: Choose a license for this repository and add its license file. Until then, reuse permissions are not specified. -->
+Licensing to be determined.
 
 ## Contact
 

@@ -2,23 +2,23 @@ name: cg_community_detection_env
 channels:
   - conda-forge
 dependencies:
-  - python=3.11
-  - cython
-  - ipykernel
-  - jupyter
-  - leidenalg
-  - matplotlib
-  - networkit
-  - networkx
-  - numpy
-  - pandas
-  - pot
-  - python-igraph
-  - scikit-learn
-  - scipy
-  - tqdm
-  - pip
-  - jinja2
+  - python=3.11.16
+  - cython=3.3.0
+  - ipykernel=7.4.0
+  - jupyter=1.1.1
+  - leidenalg=0.12.0
+  - matplotlib=3.11.2
+  - networkit=11.2
+  - networkx=3.6.1
+  - pandas=3.0.6
+  - pot=0.9.6.post1
+  - python-igraph=1.0.0
+  - scikit-learn=1.9.1
+  - tqdm=4.70.1
+  - pip=26.2.1
+  - jinja2=3.1.6
   - pip:
-      - GraphRicciCurvature
-      - python-louvain
+      - numpy==2.2.6
+      - scipy==1.13.1
+      - GraphRicciCurvature==0.6.1
+      - python-louvain==0.16
