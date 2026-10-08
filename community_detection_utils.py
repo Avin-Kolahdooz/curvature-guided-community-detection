@@ -458,7 +458,7 @@ def prepare_lrc_graph(
         pct=lrc_pct,
     )
 
-    final_graph = get_gcc(pruned_graph)
+    final_graph = pruned_graph.copy()
     prep_time = time.perf_counter() - start
 
     return {
@@ -494,7 +494,7 @@ def prepare_orc_graph(
         weight=weight,
     )
 
-    final_graph = get_gcc(flow_graph)
+    final_graph = flow_graph.copy()
     prep_time = time.perf_counter() - start
 
     return {
@@ -535,23 +535,20 @@ def prepare_combo_graph(
         pct=lrc_pct,
     )
 
-    lrc_gcc = get_gcc(after_lrc)
-
     flow_graph = run_orc_flow_gcc(
-        lrc_gcc,
+        after_lrc,
         alpha=alpha,
         iterations=iterations,
         method=method,
         weight=weight,
     )
-
     after_orc, cutoff_orc, removed_orc = prune_by_percentile(
         flow_graph,
         attr=orc_attribute,
         pct=orc_pct,
     )
 
-    final_graph = get_gcc(after_orc)
+    final_graph = after_orc.copy()
     prep_time = time.perf_counter() - start
 
     return {
