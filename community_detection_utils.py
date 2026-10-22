@@ -424,8 +424,32 @@ def run_orc_flow_gcc(
 
     orc.compute_ricci_flow(iterations=iterations)
     return orc.G.copy()
+def run_orc_no_flow(
+    graph: nx.Graph,
+    alpha: float = 0.5,
+    method: str = "Sinkhorn",
+    weight: str = "weight",
+    verbose: str = "ERROR",
+) -> nx.Graph:
 
+    graph_orc = ensure_edge_weights(
+        graph,
+        weight=weight,
+        default_weight=1.0,
+        copy_graph=True,
+    )
 
+    orc = OllivierRicci(
+        graph_orc,
+        alpha=alpha,
+        method=method,
+        weight=weight,
+        verbose=verbose,
+    )
+
+    orc.compute_ricci_curvature()
+
+    return orc.G.copy()
 # ============================================================
 # 7. PREPARE THE THREE EXPERIMENTAL GRAPHS
 # ============================================================
@@ -436,7 +460,7 @@ def prepare_lrc_graph(
     lrc_attribute: str = "LRC",
     print_distribution: bool = False,
 ) -> Dict[str, Any]:
-    """Compute LRC, prune low-LRC edges, and retain the GCC."""
+    """Compute LRC, prune low-LRC edges, and retain all remaining components"""
     start = time.perf_counter()
 
     graph_lrc = graph.copy()
@@ -478,14 +502,19 @@ def prepare_lrc_graph(
 
 def prepare_orc_graph(
     graph: nx.Graph,
+    orc_pct: float,
     alpha: float = 0.5,
     iterations: int = 5,
     method: str = "Sinkhorn",
     weight: str = "weight",
+    orc_attribute: str = "ricciCurvature",
 ) -> Dict[str, Any]:
-    """Run ORC Ricci flow on the graph and retain the GCC."""
+
+    """Run ORC Ricci flow, prune low-curvature edges, and return the sparsified graph."""
+
     start = time.perf_counter()
 
+    # 1. Run ORC Ricci flow
     flow_graph = run_orc_flow_gcc(
         graph,
         alpha=alpha,
@@ -494,23 +523,35 @@ def prepare_orc_graph(
         weight=weight,
     )
 
-    final_graph = flow_graph.copy()
+    # 2. Prune low-ORC edges
+    pruned_graph, cutoff_orc, removed_orc = prune_by_percentile(
+        flow_graph,
+        attr=orc_attribute,
+        pct=orc_pct,
+    )
+
+    # 3. Do NOT take GCC again after pruning
+    final_graph = pruned_graph.copy()
+
     prep_time = time.perf_counter() - start
 
     return {
         "method_base": "ORC-only",
         "graph": final_graph,
         "prep_time": prep_time,
+
         "removed_lrc": 0,
-        "removed_orc": 0,
+        "removed_orc": removed_orc,
+
         "pct_lrc": np.nan,
-        "pct_orc": 0,
+        "pct_orc": orc_pct,
+
         "alpha": alpha,
         "iterations": iterations,
-        "cutoff_lrc": np.nan,
-        "cutoff_orc": np.nan,
-    }
 
+        "cutoff_lrc": np.nan,
+        "cutoff_orc": cutoff_orc,
+    }
 
 def prepare_combo_graph(
     graph: nx.Graph,
@@ -522,37 +563,127 @@ def prepare_combo_graph(
     weight: str = "weight",
     lrc_attribute: str = "LRC",
     orc_attribute: str = "ricciCurvature",
+    use_ricci_flow: bool = True,
 ) -> Dict[str, Any]:
-    """Run LRC pruning, ORC Ricci flow, ORC pruning, and retain the GCC."""
+    """
+    Run LRC pruning on the full graph.
+
+    After LRC pruning:
+    - apply Ricci flow + ORC pruning only to the GCC,
+    - keep all non-GCC components unchanged,
+    - reattach them before community detection.
+    """
+
     start = time.perf_counter()
 
+    method_base = (
+        "LRC→ORC combo"
+        if use_ricci_flow
+        else "LRC→ORC combo (No Flow)"
+    )
+    
+    # ---------------------------------------------------------
+    # 1. LRC on the original benchmark
+    # ---------------------------------------------------------
     graph_lrc = graph.copy()
-    compute_LRC(graph_lrc, attribute=lrc_attribute)
 
+    compute_LRC(
+        graph_lrc,
+        attribute=lrc_attribute,
+    )
+
+    # ---------------------------------------------------------
+    # 2. LRC pruning
+    # ---------------------------------------------------------
     after_lrc, cutoff_lrc, removed_lrc = prune_by_percentile(
         graph_lrc,
         attr=lrc_attribute,
         pct=lrc_pct,
     )
 
-    flow_graph = run_orc_flow_gcc(
-        after_lrc,
-        alpha=alpha,
-        iterations=iterations,
-        method=method,
-        weight=weight,
+    # Handle empty graph safely
+    if after_lrc.number_of_nodes() == 0:
+        prep_time = time.perf_counter() - start
+
+        return {
+            "method_base": method_base,
+            "graph": after_lrc.copy(),
+            "prep_time": prep_time,
+            "removed_lrc": removed_lrc,
+            "removed_orc": 0,
+            "pct_lrc": lrc_pct,
+            "pct_orc": orc_pct,
+            "alpha": alpha,
+            "iterations": iterations,
+            "cutoff_lrc": cutoff_lrc,
+            "cutoff_orc": np.nan,
+        }
+
+    # ---------------------------------------------------------
+    # 3. Split the LRC-pruned graph into:
+    #    GCC + all remaining components
+    # ---------------------------------------------------------
+    components = sorted(
+        nx.connected_components(after_lrc),
+        key=len,
+        reverse=True,
     )
-    after_orc, cutoff_orc, removed_orc = prune_by_percentile(
+
+    gcc_nodes = components[0]
+
+    gcc_graph = after_lrc.subgraph(
+        gcc_nodes
+    ).copy()
+
+    non_gcc_nodes = set(after_lrc.nodes()) - set(gcc_nodes)
+
+    non_gcc_graph = after_lrc.subgraph(
+        non_gcc_nodes
+    ).copy()
+
+    # ---------------------------------------------------------
+    # 4. Ricci flow ONLY on the GCC
+    # ---------------------------------------------------------
+    if use_ricci_flow:
+        flow_graph = run_orc_flow_gcc(
+            gcc_graph,
+            alpha=alpha,
+            iterations=iterations,
+            method=method,
+            weight=weight,
+        )
+    else:
+        flow_graph = run_orc_no_flow(
+            gcc_graph,
+            alpha=alpha,
+            method=method,
+            weight=weight,
+        )
+
+    # ---------------------------------------------------------
+    # 5. ORC pruning ONLY on the processed GCC
+    # ---------------------------------------------------------
+    processed_gcc, cutoff_orc, removed_orc = prune_by_percentile(
         flow_graph,
         attr=orc_attribute,
         pct=orc_pct,
     )
 
-    final_graph = after_orc.copy()
+    # ---------------------------------------------------------
+    # 6. Reattach the non-GCC components from the LRC stage
+    #
+    # They do NOT undergo Ricci flow or ORC pruning.
+    # They are restored before Louvain / Leiden.
+    # ---------------------------------------------------------
+    final_graph = nx.compose(
+        processed_gcc,
+        non_gcc_graph,
+    )
+
     prep_time = time.perf_counter() - start
 
     return {
-        "method_base": "LRC→ORC combo",
+        "method_base": method_base,
         "graph": final_graph,
         "prep_time": prep_time,
         "removed_lrc": removed_lrc,
@@ -564,7 +695,6 @@ def prepare_combo_graph(
         "cutoff_lrc": cutoff_lrc,
         "cutoff_orc": cutoff_orc,
     }
-
 
 # ============================================================
 # 8. EVALUATE A PREPARED GRAPH
@@ -625,7 +755,7 @@ def evaluate_prepared_graph(
             if graph.number_of_nodes() > 0
             else 0
         ),
-        "runtime_sec": info["prep_time"] + community_time,
+        "runtime_sec": info["prep_time"],
         "prep_time": info["prep_time"],
         "community_time": community_time,
         "removed_lrc": info["removed_lrc"],
@@ -1737,7 +1867,6 @@ def run_real_dataset_heatmap(
                     # TOTAL runtime
                     total_runtime = (
                         prep_runtime
-                        + community_runtime
                     )
 
 

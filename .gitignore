@@ -1,2 +1,16 @@
+# Python cache files
 __pycache__/
+*.py[cod]
+
+# Jupyter temporary checkpoints
+.ipynb_checkpoints/
+
+# Downloaded datasets
 data/
+
+# Generated result files
+*.csv
+*.tex
+
+# macOS temporary file
+.DS_Store
