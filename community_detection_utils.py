@@ -313,17 +313,43 @@ def compute_LRC(
     attribute: str = "LRC",
 ) -> nx.Graph:
     """
-    Compute Lower Ricci Curvature for every edge.
+    Compute and store the lower Ricci curvature (LRC) score for each edge.
 
-    The graph is modified in place and returned for convenience.
+    For an edge ``(u, v)``, let ``d_u`` and ``d_v`` be the endpoint degrees
+    and ``c_uv`` the number of common neighbors. The unweighted LRC score is
+
+    ``2/d_u + 2/d_v - 2 + 2*c_uv/max(d_u, d_v) + c_uv/min(d_u, d_v)``.
+
+    Args:
+        graph: NetworkX graph whose topology defines the neighborhoods and
+            degrees. Edge weights, if present, are not used. The graph's
+            topology must remain unchanged during this call.
+        attribute: Edge-attribute name in which to store each score. Existing
+            values under this name are overwritten; defaults to ``"LRC"``.
+
+    Returns:
+        The same graph object, annotated with the requested attribute on each
+        edge. Isolated nodes have no incident edge to annotate.
+
+    Notes:
+        Neighbor sets and degrees are cached for this call, using additional
+        ``O(V + E)`` memory to avoid rebuilding neighborhoods for every edge.
+        An edge with a zero-degree endpoint is assigned ``-inf`` to avoid
+        division by zero.
     """
-    for u, v in graph.edges():
-        neighbors_u = set(graph.neighbors(u))
-        neighbors_v = set(graph.neighbors(v))
+    neighborhoods = {
+        node: set(graph.neighbors(node))
+        for node in graph
+    }
+    degrees = {
+        node: len(neighbors)
+        for node, neighbors in neighborhoods.items()
+    }
 
-        degree_u = len(neighbors_u)
-        degree_v = len(neighbors_v)
-        common_neighbors = len(neighbors_u & neighbors_v)
+    for u, v in graph.edges():
+        degree_u = degrees[u]
+        degree_v = degrees[v]
+        common_neighbors = len(neighborhoods[u] & neighborhoods[v])
 
         if degree_u == 0 or degree_v == 0:
             lrc = -np.inf
@@ -553,6 +579,185 @@ def prepare_orc_graph(
         "cutoff_orc": cutoff_orc,
     }
 
+def _split_lrc_pruned_graph(
+    graph: nx.Graph,
+) -> Tuple[nx.Graph, nx.Graph]:
+    """Split an LRC-pruned graph so ORC can run only on its GCC.
+
+    Args:
+        graph: Graph after LRC edge pruning.
+
+    Returns:
+        The GCC copy and a copy containing all other components. Keeping the
+        latter separate lets the sweep reattach it after processing the GCC.
+    """
+    if graph.number_of_nodes() == 0:
+        return graph.copy(), graph.copy()
+
+    gcc_nodes = max(nx.connected_components(graph), key=len)
+    gcc_graph = graph.subgraph(gcc_nodes).copy()
+
+    if len(gcc_nodes) == graph.number_of_nodes():
+        non_gcc_graph = graph.subgraph([]).copy()
+    else:
+        non_gcc_nodes = set(graph.nodes()) - gcc_nodes
+        non_gcc_graph = graph.subgraph(non_gcc_nodes).copy()
+
+    return gcc_graph, non_gcc_graph
+
+
+def _run_combo_orc(
+    gcc_graph: nx.Graph,
+    alpha: float,
+    iterations: int,
+    method: str,
+    weight: str,
+    use_ricci_flow: bool,
+) -> nx.Graph:
+    """Run the selected ORC operation on the GCC.
+
+    Args:
+        gcc_graph: LRC-pruned giant component to process.
+        alpha: ORC idleness parameter.
+        iterations: Ricci-flow iterations; used only when flow is enabled.
+        method: Optimal-transport method for the ORC calculation.
+        weight: Edge-weight attribute name.
+        use_ricci_flow: Whether to run iterative Ricci flow or curvature only.
+
+    Returns:
+        A processed copy of the GCC with ORC attributes.
+    """
+    if use_ricci_flow:
+        return run_orc_flow_gcc(
+            gcc_graph,
+            alpha=alpha,
+            iterations=iterations,
+            method=method,
+            weight=weight,
+        )
+
+    return run_orc_no_flow(
+        gcc_graph,
+        alpha=alpha,
+        method=method,
+        weight=weight,
+    )
+
+
+def _prune_and_reassemble_combo_graph(
+    flow_graph: nx.Graph,
+    non_gcc_graph: nx.Graph,
+    orc_pct: float,
+    orc_attribute: str,
+) -> Tuple[nx.Graph, Optional[float], int]:
+    """Apply one ORC cutoff and restore components excluded from ORC.
+
+    Args:
+        flow_graph: ORC-processed GCC.
+        non_gcc_graph: LRC-pruned components that bypassed ORC.
+        orc_pct: Percentile cutoff for ORC edge pruning.
+        orc_attribute: Edge attribute containing ORC values.
+
+    Returns:
+        The reassembled graph, ORC cutoff, and number of removed GCC edges.
+        Keeping this stage separate allows multiple cutoffs to reuse one flow.
+    """
+    if flow_graph.number_of_nodes() == 0:
+        return flow_graph.copy(), np.nan, 0
+
+    processed_gcc, cutoff_orc, removed_orc = prune_by_percentile(
+        flow_graph,
+        attr=orc_attribute,
+        pct=orc_pct,
+    )
+
+    final_graph = nx.compose(processed_gcc, non_gcc_graph)
+
+    return final_graph, cutoff_orc, removed_orc
+
+
+def _amortized_combo_prep_time(
+    lrc_compute_time: float,
+    lrc_stage_time: float,
+    flow_time: float,
+    orc_stage_time: float,
+    total_configs: int,
+    configs_per_lrc_stage: int,
+    orc_variants: int,
+) -> float:
+    """Amortize shared sweep stages into one configuration's prep time.
+
+    Args:
+        lrc_compute_time: Time to annotate the input graph with LRC.
+        lrc_stage_time: Time to prune LRC edges and split components.
+        flow_time: Time to process the GCC with ORC.
+        orc_stage_time: Time for this cutoff's ORC pruning and reassembly.
+        total_configs: Number of configurations sharing LRC computation.
+        configs_per_lrc_stage: Configurations sharing this LRC-pruned graph.
+        orc_variants: ORC cutoffs sharing this flow result.
+
+    Returns:
+        Amortized preprocessing seconds for one configuration.
+    """
+    return (
+        lrc_compute_time / total_configs
+        + lrc_stage_time / configs_per_lrc_stage
+        + flow_time / orc_variants
+        + orc_stage_time
+    )
+
+
+def _combo_preparation_info(
+    graph: nx.Graph,
+    prep_time: float,
+    lrc_pct: float,
+    orc_pct: float,
+    alpha: float,
+    iterations: int,
+    cutoff_lrc: Optional[float],
+    cutoff_orc: Optional[float],
+    removed_lrc: int,
+    removed_orc: int,
+    use_ricci_flow: bool,
+) -> Dict[str, Any]:
+    """Build the preparation metadata consumed by graph evaluation.
+
+    Args:
+        graph: Final graph for this parameter configuration.
+        prep_time: Actual or amortized preprocessing time in seconds.
+        lrc_pct: LRC pruning percentile.
+        orc_pct: ORC pruning percentile.
+        alpha: ORC idleness parameter.
+        iterations: Ricci-flow iteration count.
+        cutoff_lrc: LRC pruning threshold.
+        cutoff_orc: ORC pruning threshold.
+        removed_lrc: Number of edges removed during LRC pruning.
+        removed_orc: Number of GCC edges removed during ORC pruning.
+        use_ricci_flow: Whether the flow or curvature-only method was used.
+
+    Returns:
+        A dictionary with the graph and metadata expected by
+        ``evaluate_prepared_graph``.
+    """
+    return {
+        "method_base": (
+            "LRC→ORC combo"
+            if use_ricci_flow
+            else "LRC→ORC combo (No Flow)"
+        ),
+        "graph": graph,
+        "prep_time": prep_time,
+        "removed_lrc": removed_lrc,
+        "removed_orc": removed_orc,
+        "pct_lrc": lrc_pct,
+        "pct_orc": orc_pct,
+        "alpha": alpha,
+        "iterations": iterations,
+        "cutoff_lrc": cutoff_lrc,
+        "cutoff_orc": cutoff_orc,
+    }
+
+
 def prepare_combo_graph(
     graph: nx.Graph,
     lrc_pct: float,
@@ -573,128 +778,56 @@ def prepare_combo_graph(
     - keep all non-GCC components unchanged,
     - reattach them before community detection.
     """
-
     start = time.perf_counter()
 
-    method_base = (
-        "LRC→ORC combo"
-        if use_ricci_flow
-        else "LRC→ORC combo (No Flow)"
-    )
-    
-    # ---------------------------------------------------------
-    # 1. LRC on the original benchmark
-    # ---------------------------------------------------------
     graph_lrc = graph.copy()
+    compute_LRC(graph_lrc, attribute=lrc_attribute)
 
-    compute_LRC(
-        graph_lrc,
-        attribute=lrc_attribute,
-    )
-
-    # ---------------------------------------------------------
-    # 2. LRC pruning
-    # ---------------------------------------------------------
     after_lrc, cutoff_lrc, removed_lrc = prune_by_percentile(
         graph_lrc,
         attr=lrc_attribute,
         pct=lrc_pct,
     )
 
-    # Handle empty graph safely
+    gcc_graph, non_gcc_graph = _split_lrc_pruned_graph(after_lrc)
+
     if after_lrc.number_of_nodes() == 0:
-        prep_time = time.perf_counter() - start
-
-        return {
-            "method_base": method_base,
-            "graph": after_lrc.copy(),
-            "prep_time": prep_time,
-            "removed_lrc": removed_lrc,
-            "removed_orc": 0,
-            "pct_lrc": lrc_pct,
-            "pct_orc": orc_pct,
-            "alpha": alpha,
-            "iterations": iterations,
-            "cutoff_lrc": cutoff_lrc,
-            "cutoff_orc": np.nan,
-        }
-
-    # ---------------------------------------------------------
-    # 3. Split the LRC-pruned graph into:
-    #    GCC + all remaining components
-    # ---------------------------------------------------------
-    components = sorted(
-        nx.connected_components(after_lrc),
-        key=len,
-        reverse=True,
-    )
-
-    gcc_nodes = components[0]
-
-    gcc_graph = after_lrc.subgraph(
-        gcc_nodes
-    ).copy()
-
-    non_gcc_nodes = set(after_lrc.nodes()) - set(gcc_nodes)
-
-    non_gcc_graph = after_lrc.subgraph(
-        non_gcc_nodes
-    ).copy()
-
-    # ---------------------------------------------------------
-    # 4. Ricci flow ONLY on the GCC
-    # ---------------------------------------------------------
-    if use_ricci_flow:
-        flow_graph = run_orc_flow_gcc(
+        final_graph, cutoff_orc, removed_orc = (
+            after_lrc.copy(),
+            np.nan,
+            0,
+        )
+    else:
+        flow_graph = _run_combo_orc(
             gcc_graph,
             alpha=alpha,
             iterations=iterations,
             method=method,
             weight=weight,
+            use_ricci_flow=use_ricci_flow,
         )
-    else:
-        flow_graph = run_orc_no_flow(
-            gcc_graph,
-            alpha=alpha,
-            method=method,
-            weight=weight,
+        final_graph, cutoff_orc, removed_orc = (
+            _prune_and_reassemble_combo_graph(
+                flow_graph,
+                non_gcc_graph,
+                orc_pct=orc_pct,
+                orc_attribute=orc_attribute,
+            )
         )
 
-    # ---------------------------------------------------------
-    # 5. ORC pruning ONLY on the processed GCC
-    # ---------------------------------------------------------
-    processed_gcc, cutoff_orc, removed_orc = prune_by_percentile(
-        flow_graph,
-        attr=orc_attribute,
-        pct=orc_pct,
+    return _combo_preparation_info(
+        graph=final_graph,
+        prep_time=time.perf_counter() - start,
+        lrc_pct=lrc_pct,
+        orc_pct=orc_pct,
+        alpha=alpha,
+        iterations=iterations,
+        cutoff_lrc=cutoff_lrc,
+        cutoff_orc=cutoff_orc,
+        removed_lrc=removed_lrc,
+        removed_orc=removed_orc,
+        use_ricci_flow=use_ricci_flow,
     )
-
-    # ---------------------------------------------------------
-    # 6. Reattach the non-GCC components from the LRC stage
-    #
-    # They do NOT undergo Ricci flow or ORC pruning.
-    # They are restored before Louvain / Leiden.
-    # ---------------------------------------------------------
-    final_graph = nx.compose(
-        processed_gcc,
-        non_gcc_graph,
-    )
-
-    prep_time = time.perf_counter() - start
-
-    return {
-        "method_base": method_base,
-        "graph": final_graph,
-        "prep_time": prep_time,
-        "removed_lrc": removed_lrc,
-        "removed_orc": removed_orc,
-        "pct_lrc": lrc_pct,
-        "pct_orc": orc_pct,
-        "alpha": alpha,
-        "iterations": iterations,
-        "cutoff_lrc": cutoff_lrc,
-        "cutoff_orc": cutoff_orc,
-    }
 
 # ============================================================
 # 8. EVALUATE A PREPARED GRAPH
@@ -755,7 +888,7 @@ def evaluate_prepared_graph(
             if graph.number_of_nodes() > 0
             else 0
         ),
-        "runtime_sec": info["prep_time"],
+        "runtime_sec": info["prep_time"] + community_time,
         "prep_time": info["prep_time"],
         "community_time": community_time,
         "removed_lrc": info["removed_lrc"],
@@ -1300,79 +1433,245 @@ def run_combo_sensitivity(
     -------
     pd.DataFrame
         One row per parameter configuration and random seed.
+
+    Preparation time is amortized across configurations that share cached
+    LRC and ORC-flow work.
     """
 
     rows: List[Dict[str, Any]] = []
+    total_configs = len(lrc_pcts) * len(orc_pcts) * len(alphas)
 
-    total_configs = (
-        len(lrc_pcts)
-        * len(orc_pcts)
-        * len(alphas)
-    )
+    if total_configs == 0:
+        return pd.DataFrame(rows)
+
+    def append_row(
+        row: Dict[str, Any],
+        alpha_index: int,
+        lrc_index: int,
+        orc_index: int,
+        seed_index: int,
+    ) -> None:
+        """Queue one result row with indices for restoring input order.
+
+        Args:
+            row: Result or failure record to append.
+            alpha_index: Position of the alpha value in the input sequence.
+            lrc_index: Position of the LRC cutoff in the input sequence.
+            orc_index: Position of the ORC cutoff in the input sequence.
+            seed_index: Position of the seed in the input sequence.
+
+        Returns:
+            None. The row is added to the enclosing result list.
+        """
+        row["_sweep_order"] = (
+            alpha_index,
+            lrc_index,
+            orc_index,
+            seed_index,
+        )
+        rows.append(row)
+
+    def append_preparation_failures(
+        lrc_pct: float,
+        orc_pct: float,
+        alpha: float,
+        error: Exception,
+        alpha_index: int,
+        lrc_index: int,
+        orc_index: int,
+    ) -> None:
+        """Append one failed result per seed for a preparation error.
+
+        Args:
+            lrc_pct: LRC cutoff for the failed configuration.
+            orc_pct: ORC cutoff for the failed configuration.
+            alpha: ORC idleness value for the failed configuration.
+            error: Exception raised while preparing the graph.
+            alpha_index: Position of alpha in its input sequence.
+            lrc_index: Position of the LRC cutoff in its input sequence.
+            orc_index: Position of the ORC cutoff in its input sequence.
+
+        Returns:
+            None. Failed rows are added to the enclosing result list.
+        """
+        for seed_index, seed in enumerate(seeds):
+            append_row(
+                {
+                    "method": "LRC→ORC combo",
+                    "algorithm": algorithm,
+                    "seed": seed,
+                    "lrc_pct": lrc_pct,
+                    "orc_pct": orc_pct,
+                    "alpha": alpha,
+                    "iterations": iterations,
+                    "ARI": np.nan,
+                    "NMI": np.nan,
+                    "runtime_sec": np.nan,
+                    "prep_time": np.nan,
+                    "community_time": np.nan,
+                    "n_eval": 0,
+                    "V": 0,
+                    "E": 0,
+                    "removed_lrc": np.nan,
+                    "removed_orc": np.nan,
+                    "status": "failed",
+                    "error": repr(error),
+                },
+                alpha_index,
+                lrc_index,
+                orc_index,
+                seed_index,
+            )
+
+    lrc_start = time.perf_counter()
+    try:
+        graph_lrc = graph.copy()
+        compute_LRC(graph_lrc)
+    except Exception as error:
+        if verbose:
+            print("LRC preparation failed:", repr(error))
+        for alpha_index, alpha in enumerate(alphas):
+            for lrc_index, lrc_pct in enumerate(lrc_pcts):
+                for orc_index, orc_pct in enumerate(orc_pcts):
+                    append_preparation_failures(
+                        lrc_pct,
+                        orc_pct,
+                        alpha,
+                        error,
+                        alpha_index,
+                        lrc_index,
+                        orc_index,
+                    )
+        return pd.DataFrame(rows)
+    lrc_compute_time = time.perf_counter() - lrc_start
 
     config_index = 0
 
-    for alpha in alphas:
-        for lrc_pct in lrc_pcts:
-            for orc_pct in orc_pcts:
-
-                config_index += 1
-
-                if verbose:
-                    print(
-                        f"[{config_index}/{total_configs}] "
-                        f"LRC={lrc_pct}%, "
-                        f"ORC={orc_pct}%, "
-                        f"alpha={alpha}"
+    for lrc_index, lrc_pct in enumerate(lrc_pcts):
+        lrc_stage_start = time.perf_counter()
+        try:
+            after_lrc, cutoff_lrc, removed_lrc = prune_by_percentile(
+                graph_lrc,
+                attr="LRC",
+                pct=lrc_pct,
+            )
+            gcc_graph, non_gcc_graph = _split_lrc_pruned_graph(after_lrc)
+        except Exception as error:
+            if verbose:
+                print("LRC pruning failed:", repr(error))
+            for alpha_index, alpha in enumerate(alphas):
+                for orc_index, orc_pct in enumerate(orc_pcts):
+                    config_index += 1
+                    if verbose:
+                        print(
+                            f"[{config_index}/{total_configs}] "
+                            f"LRC={lrc_pct}%, ORC={orc_pct}%, alpha={alpha}"
+                        )
+                    append_preparation_failures(
+                        lrc_pct,
+                        orc_pct,
+                        alpha,
+                        error,
+                        alpha_index,
+                        lrc_index,
+                        orc_index,
                     )
+            continue
+        lrc_stage_time = time.perf_counter() - lrc_stage_start
 
-                try:
-                    info = prepare_combo_graph(
-                        graph=graph,
-                        lrc_pct=lrc_pct,
-                        orc_pct=orc_pct,
+        for alpha_index, alpha in enumerate(alphas):
+            flow_start = time.perf_counter()
+            try:
+                if after_lrc.number_of_nodes() == 0:
+                    flow_graph = gcc_graph
+                else:
+                    flow_graph = _run_combo_orc(
+                        gcc_graph,
                         alpha=alpha,
                         iterations=iterations,
                         method=method,
                         weight=weight,
+                        use_ricci_flow=True,
                     )
-
-                except Exception as error:
+            except Exception as error:
+                if verbose:
+                    print("ORC preparation failed:", repr(error))
+                for orc_index, orc_pct in enumerate(orc_pcts):
+                    config_index += 1
                     if verbose:
                         print(
-                            "Preparation failed:",
-                            repr(error),
+                            f"[{config_index}/{total_configs}] "
+                            f"LRC={lrc_pct}%, ORC={orc_pct}%, alpha={alpha}"
                         )
+                    append_preparation_failures(
+                        lrc_pct,
+                        orc_pct,
+                        alpha,
+                        error,
+                        alpha_index,
+                        lrc_index,
+                        orc_index,
+                    )
+                continue
+            flow_time = time.perf_counter() - flow_start
 
-                    for seed in seeds:
-                        rows.append(
-                            {
-                                "method": "LRC→ORC combo",
-                                "algorithm": algorithm,
-                                "seed": seed,
-                                "lrc_pct": lrc_pct,
-                                "orc_pct": orc_pct,
-                                "alpha": alpha,
-                                "iterations": iterations,
-                                "ARI": np.nan,
-                                "NMI": np.nan,
-                                "runtime_sec": np.nan,
-                                "prep_time": np.nan,
-                                "community_time": np.nan,
-                                "n_eval": 0,
-                                "V": 0,
-                                "E": 0,
-                                "removed_lrc": np.nan,
-                                "removed_orc": np.nan,
-                                "status": "failed",
-                                "error": repr(error),
-                            }
+            for orc_index, orc_pct in enumerate(orc_pcts):
+                config_index += 1
+                if verbose:
+                    print(
+                        f"[{config_index}/{total_configs}] "
+                        f"LRC={lrc_pct}%, ORC={orc_pct}%, alpha={alpha}"
+                    )
+
+                orc_stage_start = time.perf_counter()
+                try:
+                    final_graph, cutoff_orc, removed_orc = (
+                        _prune_and_reassemble_combo_graph(
+                            flow_graph,
+                            non_gcc_graph,
+                            orc_pct=orc_pct,
+                            orc_attribute="ricciCurvature",
                         )
-
+                    )
+                except Exception as error:
+                    if verbose:
+                        print("ORC pruning failed:", repr(error))
+                    append_preparation_failures(
+                        lrc_pct,
+                        orc_pct,
+                        alpha,
+                        error,
+                        alpha_index,
+                        lrc_index,
+                        orc_index,
+                    )
                     continue
+                orc_stage_time = time.perf_counter() - orc_stage_start
 
-                for seed in seeds:
+                prep_time = _amortized_combo_prep_time(
+                    lrc_compute_time=lrc_compute_time,
+                    lrc_stage_time=lrc_stage_time,
+                    flow_time=flow_time,
+                    orc_stage_time=orc_stage_time,
+                    total_configs=total_configs,
+                    configs_per_lrc_stage=len(alphas) * len(orc_pcts),
+                    orc_variants=len(orc_pcts),
+                )
+                info = _combo_preparation_info(
+                    graph=final_graph,
+                    prep_time=prep_time,
+                    lrc_pct=lrc_pct,
+                    orc_pct=orc_pct,
+                    alpha=alpha,
+                    iterations=iterations,
+                    cutoff_lrc=cutoff_lrc,
+                    cutoff_orc=cutoff_orc,
+                    removed_lrc=removed_lrc,
+                    removed_orc=removed_orc,
+                    use_ricci_flow=True,
+                )
 
+                for seed_index, seed in enumerate(seeds):
                     try:
                         result = evaluate_prepared_graph(
                             info=info,
@@ -1381,7 +1680,6 @@ def run_combo_sensitivity(
                             weight=weight,
                             label_attribute=label_attribute,
                         )
-
                         result.update(
                             {
                                 "lrc_pct": lrc_pct,
@@ -1392,11 +1690,15 @@ def run_combo_sensitivity(
                                 "error": "",
                             }
                         )
-
-                        rows.append(result)
-
+                        append_row(
+                            result,
+                            alpha_index,
+                            lrc_index,
+                            orc_index,
+                            seed_index,
+                        )
                     except Exception as error:
-                        rows.append(
+                        append_row(
                             {
                                 "method": "LRC→ORC combo",
                                 "algorithm": algorithm,
@@ -1408,26 +1710,25 @@ def run_combo_sensitivity(
                                 "ARI": np.nan,
                                 "NMI": np.nan,
                                 "runtime_sec": np.nan,
-                                "prep_time": info.get(
-                                    "prep_time",
-                                    np.nan,
-                                ),
+                                "prep_time": info["prep_time"],
                                 "community_time": np.nan,
                                 "n_eval": 0,
-                                "V": info["graph"].number_of_nodes(),
-                                "E": info["graph"].number_of_edges(),
-                                "removed_lrc": info.get(
-                                    "removed_lrc",
-                                    np.nan,
-                                ),
-                                "removed_orc": info.get(
-                                    "removed_orc",
-                                    np.nan,
-                                ),
+                                "V": final_graph.number_of_nodes(),
+                                "E": final_graph.number_of_edges(),
+                                "removed_lrc": removed_lrc,
+                                "removed_orc": removed_orc,
                                 "status": "failed",
                                 "error": repr(error),
-                            }
+                            },
+                            alpha_index,
+                            lrc_index,
+                            orc_index,
+                            seed_index,
                         )
+
+    rows.sort(key=lambda row: row["_sweep_order"])
+    for row in rows:
+        del row["_sweep_order"]
 
     return pd.DataFrame(rows)
 
@@ -1771,6 +2072,7 @@ def run_real_dataset_heatmap(
     label_attribute="label_gt",
     orc_iterations=5,
 ):
+    """Run a heatmap sweep with shared preprocessing time amortized per cell."""
 
     # --------------------------------------------------------
     # Empirical structure
@@ -1795,60 +2097,102 @@ def run_real_dataset_heatmap(
 
 
     rows = []
+    total_configs = len(LRC_HEAT_VALUES) * len(ORC_HEAT_VALUES)
 
+    lrc_start = time.perf_counter()
+    graph_lrc = graph.copy()
+    compute_LRC(graph_lrc)
+    lrc_compute_time = time.perf_counter() - lrc_start
 
     # ========================================================
     # 4. GRID
     # ========================================================
 
     for lrc_pct in LRC_HEAT_VALUES:
+        lrc_stage_start = time.perf_counter()
+        try:
+            after_lrc, cutoff_lrc, removed_lrc = prune_by_percentile(
+                graph_lrc,
+                attr="LRC",
+                pct=lrc_pct,
+            )
+            gcc_graph, non_gcc_graph = _split_lrc_pruned_graph(after_lrc)
+        except Exception as error:
+            for orc_pct in ORC_HEAT_VALUES:
+                print(
+                    f"\n{dataset_name} | "
+                    f"LRC={lrc_pct}% | ORC={orc_pct}%"
+                )
+                print("FAILED:", repr(error))
+            continue
+        lrc_stage_time = time.perf_counter() - lrc_stage_start
+
+        flow_start = time.perf_counter()
+        try:
+            if after_lrc.number_of_nodes() == 0:
+                flow_graph = gcc_graph
+            else:
+                flow_graph = _run_combo_orc(
+                    gcc_graph,
+                    alpha=HEATMAP_ALPHA,
+                    iterations=orc_iterations,
+                    method="Sinkhorn",
+                    weight="weight",
+                    use_ricci_flow=True,
+                )
+        except Exception as error:
+            for orc_pct in ORC_HEAT_VALUES:
+                print(
+                    f"\n{dataset_name} | "
+                    f"LRC={lrc_pct}% | ORC={orc_pct}%"
+                )
+                print("FAILED:", repr(error))
+            continue
+        flow_time = time.perf_counter() - flow_start
 
         for orc_pct in ORC_HEAT_VALUES:
-
             print(
                 f"\n{dataset_name} | "
                 f"LRC={lrc_pct}% | "
                 f"ORC={orc_pct}%"
             )
 
-
             try:
+                orc_stage_start = time.perf_counter()
+                final_graph, cutoff_orc, removed_orc = (
+                    _prune_and_reassemble_combo_graph(
+                        flow_graph,
+                        non_gcc_graph,
+                        orc_pct=orc_pct,
+                        orc_attribute="ricciCurvature",
+                    )
+                )
+                orc_stage_time = time.perf_counter() - orc_stage_start
 
-                # ------------------------------------------------
-                # PREPROCESSING TIMER
-                # ------------------------------------------------
-
-                prep_start = time.perf_counter()
-
-
-                combo_info = prepare_combo_graph(
-                    graph=graph,
+                prep_runtime = _amortized_combo_prep_time(
+                    lrc_compute_time=lrc_compute_time,
+                    lrc_stage_time=lrc_stage_time,
+                    flow_time=flow_time,
+                    orc_stage_time=orc_stage_time,
+                    total_configs=total_configs,
+                    configs_per_lrc_stage=len(ORC_HEAT_VALUES),
+                    orc_variants=len(ORC_HEAT_VALUES),
+                )
+                combo_info = _combo_preparation_info(
+                    graph=final_graph,
+                    prep_time=prep_runtime,
                     lrc_pct=lrc_pct,
                     orc_pct=orc_pct,
                     alpha=HEATMAP_ALPHA,
                     iterations=orc_iterations,
-                    method="Sinkhorn",
-                    weight="weight",
-                    )
-
-
-                prep_runtime = (
-                    time.perf_counter()
-                    - prep_start
+                    cutoff_lrc=cutoff_lrc,
+                    cutoff_orc=cutoff_orc,
+                    removed_lrc=removed_lrc,
+                    removed_orc=removed_orc,
+                    use_ricci_flow=True,
                 )
 
-
-                # ------------------------------------------------
-                # COMMUNITY DETECTION
-                # ------------------------------------------------
-
                 for seed in LOUVAIN_SEEDS:
-
-                    community_start = (
-                        time.perf_counter()
-                    )
-
-
                     result = evaluate_prepared_graph(
                         info=combo_info,
                         algorithm="louvain",
@@ -1856,48 +2200,25 @@ def run_real_dataset_heatmap(
                         weight="weight",
                         label_attribute=label_attribute,
                     )
-
-
-                    community_runtime = (
-                        time.perf_counter()
-                        - community_start
-                    )
-
-
-                    # TOTAL runtime
-                    total_runtime = (
-                        prep_runtime
-                    )
-
+                    community_runtime = result["community_time"]
+                    total_runtime = result["runtime_sec"]
 
                     rows.append(
                         {
                             "dataset": dataset_name,
-
                             "seed": seed,
-
                             "lrc_pct": lrc_pct,
                             "orc_pct": orc_pct,
-
                             "p_in": p_in,
                             "p_out": p_out,
-
                             "ARI": result["ARI"],
                             "NMI": result["NMI"],
-
-                            "Prep_time":
-                                prep_runtime,
-
-                            "Community_time":
-                                community_runtime,
-
-                            "Runtime":
-                                total_runtime,
-
+                            "Prep_time": prep_runtime,
+                            "Community_time": community_runtime,
+                            "Runtime": total_runtime,
                             "status": "ok",
                         }
                     )
-
 
                     print(
                         f"seed={seed} | "
@@ -1905,14 +2226,8 @@ def run_real_dataset_heatmap(
                         f"NMI={result['NMI']:.3f} | "
                         f"T={total_runtime:.2f}s"
                     )
-
-
             except Exception as error:
-
-                print(
-                    "FAILED:",
-                    repr(error)
-                )
+                print("FAILED:", repr(error))
 
 
     # ========================================================
