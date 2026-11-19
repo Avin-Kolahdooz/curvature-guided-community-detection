@@ -123,9 +123,6 @@ class SweepPreparationReuseTests(unittest.TestCase):
         graph = self.make_graph()
 
         with (
-            patch.object(cdu, "LRC_HEAT_VALUES", [0, 10]),
-            patch.object(cdu, "ORC_HEAT_VALUES", [0, 50]),
-            patch.object(cdu, "LOUVAIN_SEEDS", [1]),
             patch.object(
                 cdu,
                 "compute_LRC",
@@ -136,23 +133,77 @@ class SweepPreparationReuseTests(unittest.TestCase):
                 "run_orc_flow_gcc",
                 side_effect=self.fake_orc_flow,
             ) as run_flow,
-            patch.object(cdu.plt, "show"),
         ):
             raw_results, _ = cdu.run_real_dataset_heatmap(
                 graph=graph,
                 dataset_name="test",
                 orc_iterations=1,
+                lrc_pcts=[0, 10],
+                orc_pcts=[0, 25, 50],
+                seeds=[1],
+                alpha=0.3,
+                plot=False,
             )
 
         self.assertEqual(compute_lrc.call_count, 1)
         self.assertEqual(run_flow.call_count, 2)
-        self.assertEqual(len(raw_results), 4)
+        self.assertEqual(len(raw_results), 6)
         self.assertTrue((raw_results["status"] == "ok").all())
         self.assertTrue(
             (
                 raw_results["Runtime"]
                 == raw_results["Prep_time"] + raw_results["Community_time"]
             ).all()
+        )
+
+    def test_heatmap_preserves_no_flow_zero_cutoffs(self) -> None:
+        """Check zero-ORC cells stay unflowed alongside positive cutoffs."""
+        graph = self.make_graph()
+        evaluated_graphs = {}
+        evaluate_prepared_graph = cdu.evaluate_prepared_graph
+
+        def capture_evaluation(info, **kwargs):
+            evaluated_graphs[info["method_base"]] = info["graph"].copy()
+            return evaluate_prepared_graph(info, **kwargs)
+
+        with (
+            patch.object(
+                cdu,
+                "run_orc_flow_gcc",
+                side_effect=self.fake_orc_flow,
+            ) as run_flow,
+            patch.object(
+                cdu,
+                "evaluate_prepared_graph",
+                side_effect=capture_evaluation,
+            ),
+        ):
+            raw_results, _ = cdu.run_real_dataset_heatmap(
+                graph=graph,
+                dataset_name="test",
+                lrc_pcts=[0, 10],
+                orc_pcts=[0, 50],
+                seeds=[1],
+                plot=False,
+            )
+
+        self.assertEqual(run_flow.call_count, 2)
+        self.assertEqual(
+            set(raw_results["method"]),
+            {
+                "Plain Louvain",
+                "LRC-only",
+                "ORC-only",
+                "LRC→ORC combo",
+            },
+        )
+        self.assertNotIn(
+            "ricciCurvature",
+            next(iter(evaluated_graphs["Plain Louvain"].edges(data=True)))[2],
+        )
+        self.assertNotIn(
+            "ricciCurvature",
+            next(iter(evaluated_graphs["LRC-only"].edges(data=True)))[2],
         )
 
     def test_single_configuration_no_flow_path_is_preserved(self) -> None:

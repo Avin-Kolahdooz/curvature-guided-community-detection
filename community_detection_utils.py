@@ -2071,8 +2071,28 @@ def run_real_dataset_heatmap(
     dataset_name,
     label_attribute="label_gt",
     orc_iterations=5,
+    lrc_pcts: Optional[Sequence[float]] = None,
+    orc_pcts: Optional[Sequence[float]] = None,
+    seeds: Optional[Sequence[int]] = None,
+    alpha: Optional[float] = None,
+    plot: bool = True,
 ):
-    """Run a heatmap sweep with shared preprocessing time amortized per cell."""
+    """Evaluate a real-dataset heatmap while reusing shared preprocessing.
+
+    LRC scores are computed once, and each ORC flow is reused across positive
+    ORC cutoffs at the same LRC cutoff. Zero-ORC cells remain plain or LRC-only
+    runs without Ricci flow. Omitted grids, seeds, and alpha use module defaults.
+    """
+    lrc_values = list(LRC_HEAT_VALUES if lrc_pcts is None else lrc_pcts)
+    orc_values = list(ORC_HEAT_VALUES if orc_pcts is None else orc_pcts)
+    seed_values = list(LOUVAIN_SEEDS if seeds is None else seeds)
+    alpha_value = HEATMAP_ALPHA if alpha is None else alpha
+
+    if not lrc_values or not orc_values or not seed_values:
+        raise ValueError("LRC values, ORC values, and seeds must be non-empty.")
+
+    if any(not 0 <= pct <= 100 for pct in lrc_values + orc_values):
+        raise ValueError("LRC and ORC percentages must be between 0 and 100.")
 
     # --------------------------------------------------------
     # Empirical structure
@@ -2097,104 +2117,250 @@ def run_real_dataset_heatmap(
 
 
     rows = []
-    total_configs = len(LRC_HEAT_VALUES) * len(ORC_HEAT_VALUES)
+    positive_lrc_count = sum(pct > 0 for pct in lrc_values)
+    positive_orc_count = sum(pct > 0 for pct in orc_values)
+    lrc_configs_sharing_scores = positive_lrc_count * len(orc_values)
+    lrc_compute_time = 0.0
+    graph_lrc = None
+    lrc_compute_error = None
 
-    lrc_start = time.perf_counter()
-    graph_lrc = graph.copy()
-    compute_LRC(graph_lrc)
-    lrc_compute_time = time.perf_counter() - lrc_start
+    if positive_lrc_count:
+        lrc_start = time.perf_counter()
+        try:
+            graph_lrc = graph.copy()
+            compute_LRC(graph_lrc)
+        except Exception as error:
+            lrc_compute_error = error
+            print("LRC preparation failed:", repr(error))
+        lrc_compute_time = time.perf_counter() - lrc_start
+
+    def append_failure(
+        lrc_pct: float,
+        orc_pct: float,
+        error: Exception,
+        seed: Optional[int] = None,
+    ) -> None:
+        """Record a failed configuration for one or all seeds."""
+        method_name = (
+            "Plain Louvain"
+            if lrc_pct == 0 and orc_pct == 0
+            else "LRC-only"
+            if orc_pct == 0
+            else "ORC-only"
+            if lrc_pct == 0
+            else "LRC→ORC combo"
+        )
+        failed_seeds = seed_values if seed is None else [seed]
+        for failed_seed in failed_seeds:
+            rows.append(
+                {
+                    "dataset": dataset_name,
+                    "method": method_name,
+                    "seed": failed_seed,
+                    "lrc_pct": lrc_pct,
+                    "orc_pct": orc_pct,
+                    "alpha": alpha_value,
+                    "p_in": p_in,
+                    "p_out": p_out,
+                    "ARI": np.nan,
+                    "NMI": np.nan,
+                    "Prep_time": np.nan,
+                    "Community_time": np.nan,
+                    "Runtime": np.nan,
+                    "V": np.nan,
+                    "E": np.nan,
+                    "status": "failed",
+                    "error": repr(error),
+                }
+            )
 
     # ========================================================
     # 4. GRID
     # ========================================================
 
-    for lrc_pct in LRC_HEAT_VALUES:
+    for lrc_pct in lrc_values:
+        if lrc_pct > 0 and lrc_compute_error is not None:
+            for orc_pct in orc_values:
+                append_failure(lrc_pct, orc_pct, lrc_compute_error)
+            continue
+
         lrc_stage_start = time.perf_counter()
         try:
-            after_lrc, cutoff_lrc, removed_lrc = prune_by_percentile(
-                graph_lrc,
-                attr="LRC",
-                pct=lrc_pct,
-            )
-            gcc_graph, non_gcc_graph = _split_lrc_pruned_graph(after_lrc)
-        except Exception as error:
-            for orc_pct in ORC_HEAT_VALUES:
-                print(
-                    f"\n{dataset_name} | "
-                    f"LRC={lrc_pct}% | ORC={orc_pct}%"
-                )
-                print("FAILED:", repr(error))
-            continue
-        lrc_stage_time = time.perf_counter() - lrc_stage_start
-
-        flow_start = time.perf_counter()
-        try:
-            if after_lrc.number_of_nodes() == 0:
-                flow_graph = gcc_graph
+            if lrc_pct == 0:
+                after_lrc = graph
+                cutoff_lrc = np.nan
+                removed_lrc = 0
             else:
-                flow_graph = _run_combo_orc(
-                    gcc_graph,
-                    alpha=HEATMAP_ALPHA,
-                    iterations=orc_iterations,
-                    method="Sinkhorn",
-                    weight="weight",
-                    use_ricci_flow=True,
+                after_lrc, cutoff_lrc, removed_lrc = prune_by_percentile(
+                    graph_lrc,
+                    attr="LRC",
+                    pct=lrc_pct,
                 )
-        except Exception as error:
-            for orc_pct in ORC_HEAT_VALUES:
-                print(
-                    f"\n{dataset_name} | "
-                    f"LRC={lrc_pct}% | ORC={orc_pct}%"
-                )
-                print("FAILED:", repr(error))
-            continue
-        flow_time = time.perf_counter() - flow_start
 
-        for orc_pct in ORC_HEAT_VALUES:
+            if lrc_pct > 0 and positive_orc_count:
+                gcc_graph, non_gcc_graph = _split_lrc_pruned_graph(after_lrc)
+            else:
+                gcc_graph = after_lrc
+                non_gcc_graph = after_lrc.subgraph([]).copy()
+        except Exception as error:
+            print(f"LRC preparation failed for {lrc_pct}%:", repr(error))
+            for orc_pct in orc_values:
+                append_failure(lrc_pct, orc_pct, error)
+            continue
+        lrc_stage_time = (
+            time.perf_counter() - lrc_stage_start
+            if lrc_pct > 0
+            else 0.0
+        )
+
+        flow_graph = None
+        flow_time = 0.0
+        flow_error = None
+        if positive_orc_count:
+            flow_start = time.perf_counter()
+            try:
+                if after_lrc.number_of_nodes() == 0:
+                    flow_graph = gcc_graph
+                elif lrc_pct == 0:
+                    flow_graph = run_orc_flow_gcc(
+                        after_lrc,
+                        alpha=alpha_value,
+                        iterations=orc_iterations,
+                        method="Sinkhorn",
+                        weight="weight",
+                    )
+                else:
+                    flow_graph = run_orc_flow_gcc(
+                        gcc_graph,
+                        alpha=alpha_value,
+                        iterations=orc_iterations,
+                        method="Sinkhorn",
+                        weight="weight",
+                    )
+            except Exception as error:
+                flow_error = error
+                print(
+                    f"ORC preparation failed for LRC={lrc_pct}%:",
+                    repr(error),
+                )
+            flow_time = time.perf_counter() - flow_start
+
+        for orc_pct in orc_values:
             print(
                 f"\n{dataset_name} | "
                 f"LRC={lrc_pct}% | "
                 f"ORC={orc_pct}%"
             )
 
-            try:
-                orc_stage_start = time.perf_counter()
-                final_graph, cutoff_orc, removed_orc = (
-                    _prune_and_reassemble_combo_graph(
-                        flow_graph,
-                        non_gcc_graph,
-                        orc_pct=orc_pct,
-                        orc_attribute="ricciCurvature",
+            if lrc_pct == 0 and orc_pct == 0:
+                info = {
+                    "method_base": "Plain Louvain",
+                    "graph": graph.copy(),
+                    "prep_time": 0.0,
+                    "removed_lrc": 0,
+                    "removed_orc": 0,
+                    "pct_lrc": 0,
+                    "pct_orc": 0,
+                    "alpha": np.nan,
+                    "iterations": 0,
+                    "cutoff_lrc": np.nan,
+                    "cutoff_orc": np.nan,
+                }
+            elif orc_pct == 0:
+                prep_time = (
+                    lrc_compute_time / lrc_configs_sharing_scores
+                    + lrc_stage_time / len(orc_values)
+                )
+                info = {
+                    "method_base": "LRC-only",
+                    "graph": after_lrc.copy(),
+                    "prep_time": prep_time,
+                    "removed_lrc": removed_lrc,
+                    "removed_orc": 0,
+                    "pct_lrc": lrc_pct,
+                    "pct_orc": np.nan,
+                    "alpha": np.nan,
+                    "iterations": np.nan,
+                    "cutoff_lrc": cutoff_lrc,
+                    "cutoff_orc": np.nan,
+                }
+            else:
+                if flow_error is not None:
+                    append_failure(lrc_pct, orc_pct, flow_error)
+                    continue
+                if flow_graph is None:
+                    error = RuntimeError(
+                        "ORC flow was not prepared for this cutoff."
                     )
-                )
-                orc_stage_time = time.perf_counter() - orc_stage_start
+                    append_failure(lrc_pct, orc_pct, error)
+                    continue
 
-                prep_runtime = _amortized_combo_prep_time(
-                    lrc_compute_time=lrc_compute_time,
-                    lrc_stage_time=lrc_stage_time,
-                    flow_time=flow_time,
-                    orc_stage_time=orc_stage_time,
-                    total_configs=total_configs,
-                    configs_per_lrc_stage=len(ORC_HEAT_VALUES),
-                    orc_variants=len(ORC_HEAT_VALUES),
-                )
-                combo_info = _combo_preparation_info(
-                    graph=final_graph,
-                    prep_time=prep_runtime,
-                    lrc_pct=lrc_pct,
-                    orc_pct=orc_pct,
-                    alpha=HEATMAP_ALPHA,
-                    iterations=orc_iterations,
-                    cutoff_lrc=cutoff_lrc,
-                    cutoff_orc=cutoff_orc,
-                    removed_lrc=removed_lrc,
-                    removed_orc=removed_orc,
-                    use_ricci_flow=True,
-                )
+                try:
+                    orc_stage_start = time.perf_counter()
+                    if lrc_pct == 0:
+                        final_graph, cutoff_orc, removed_orc = (
+                            prune_by_percentile(
+                                flow_graph,
+                                attr="ricciCurvature",
+                                pct=orc_pct,
+                            )
+                        )
+                    else:
+                        final_graph, cutoff_orc, removed_orc = (
+                            _prune_and_reassemble_combo_graph(
+                                flow_graph,
+                                non_gcc_graph,
+                                orc_pct=orc_pct,
+                                orc_attribute="ricciCurvature",
+                            )
+                        )
+                    orc_stage_time = time.perf_counter() - orc_stage_start
 
-                for seed in LOUVAIN_SEEDS:
+                    prep_time = (
+                        flow_time / positive_orc_count
+                        + orc_stage_time
+                    )
+                    if lrc_pct == 0:
+                        info = {
+                            "method_base": "ORC-only",
+                            "graph": final_graph,
+                            "prep_time": prep_time,
+                            "removed_lrc": 0,
+                            "removed_orc": removed_orc,
+                            "pct_lrc": np.nan,
+                            "pct_orc": orc_pct,
+                            "alpha": alpha_value,
+                            "iterations": orc_iterations,
+                            "cutoff_lrc": np.nan,
+                            "cutoff_orc": cutoff_orc,
+                        }
+                    else:
+                        prep_time += (
+                            lrc_compute_time / lrc_configs_sharing_scores
+                            + lrc_stage_time / len(orc_values)
+                        )
+                        info = _combo_preparation_info(
+                            graph=final_graph,
+                            prep_time=prep_time,
+                            lrc_pct=lrc_pct,
+                            orc_pct=orc_pct,
+                            alpha=alpha_value,
+                            iterations=orc_iterations,
+                            cutoff_lrc=cutoff_lrc,
+                            cutoff_orc=cutoff_orc,
+                            removed_lrc=removed_lrc,
+                            removed_orc=removed_orc,
+                            use_ricci_flow=True,
+                        )
+                except Exception as error:
+                    print("ORC pruning failed:", repr(error))
+                    append_failure(lrc_pct, orc_pct, error)
+                    continue
+
+            for seed in seed_values:
+                try:
                     result = evaluate_prepared_graph(
-                        info=combo_info,
+                        info=info,
                         algorithm="louvain",
                         seed=seed,
                         weight="weight",
@@ -2206,17 +2372,22 @@ def run_real_dataset_heatmap(
                     rows.append(
                         {
                             "dataset": dataset_name,
+                            "method": result["method"],
                             "seed": seed,
                             "lrc_pct": lrc_pct,
                             "orc_pct": orc_pct,
+                            "alpha": alpha_value,
                             "p_in": p_in,
                             "p_out": p_out,
                             "ARI": result["ARI"],
                             "NMI": result["NMI"],
-                            "Prep_time": prep_runtime,
+                            "Prep_time": result["prep_time"],
                             "Community_time": community_runtime,
                             "Runtime": total_runtime,
+                            "V": result["V"],
+                            "E": result["E"],
                             "status": "ok",
+                            "error": "",
                         }
                     )
 
@@ -2226,8 +2397,9 @@ def run_real_dataset_heatmap(
                         f"NMI={result['NMI']:.3f} | "
                         f"T={total_runtime:.2f}s"
                     )
-            except Exception as error:
-                print("FAILED:", repr(error))
+                except Exception as error:
+                    print("Evaluation failed:", repr(error))
+                    append_failure(lrc_pct, orc_pct, error, seed=seed)
 
 
     # ========================================================
@@ -2290,8 +2462,8 @@ def run_real_dataset_heatmap(
                 values=column
             )
             .reindex(
-                index=LRC_HEAT_VALUES,
-                columns=ORC_HEAT_VALUES
+                index=lrc_values,
+                columns=orc_values
             )
         )
 
@@ -2360,14 +2532,14 @@ def run_real_dataset_heatmap(
 
         ax.set_xticks(
             np.arange(
-                len(ORC_HEAT_VALUES)
+                len(orc_values)
             )
         )
 
         ax.set_xticklabels(
             [
                 f"{x}%"
-                for x in ORC_HEAT_VALUES
+                for x in orc_values
             ],
             fontsize=12
         )
@@ -2379,14 +2551,14 @@ def run_real_dataset_heatmap(
 
         ax.set_yticks(
             np.arange(
-                len(LRC_HEAT_VALUES)
+                len(lrc_values)
             )
         )
 
         ax.set_yticklabels(
             [
                 f"{x}%"
-                for x in LRC_HEAT_VALUES
+                for x in lrc_values
             ],
             fontsize=12
         )
@@ -2421,13 +2593,9 @@ def run_real_dataset_heatmap(
         # CELL TEXT
         # ----------------------------------------------------
 
-        for i, lrc_pct in enumerate(
-            LRC_HEAT_VALUES
-        ):
+        for i, lrc_pct in enumerate(lrc_values):
 
-            for j, orc_pct in enumerate(
-                ORC_HEAT_VALUES
-            ):
+            for j, orc_pct in enumerate(orc_values):
 
                 metric_value = (
                     metric_matrix.loc[
@@ -2500,16 +2668,16 @@ def run_real_dataset_heatmap(
     # 8. ARI + NMI
     # ========================================================
 
-    plot_heatmap(
-        ari_matrix,
-        "ARI"
-    )
+    if plot:
+        plot_heatmap(
+            ari_matrix,
+            "ARI"
+        )
 
-
-    plot_heatmap(
-        nmi_matrix,
-        "NMI"
-    )
+        plot_heatmap(
+            nmi_matrix,
+            "NMI"
+        )
 
 
     return (
