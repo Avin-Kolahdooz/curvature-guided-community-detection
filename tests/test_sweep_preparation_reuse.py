@@ -67,6 +67,60 @@ class SweepPreparationReuseTests(unittest.TestCase):
         for u, v in [(6, 7), (7, 8), (8, 9), (9, 6)]:
             self.assertAlmostEqual(graph[u][v]["curvature"], 0.0)
 
+    def test_community_metrics_reuses_neighborhood_cache_across_calls(
+        self,
+    ) -> None:
+        """Check cached neighborhoods preserve metrics and avoid graph lookups."""
+        graph = self.make_graph()
+        community = set(range(12))
+        expected = cdu.compute_community_metrics(graph, community)
+        neighborhood_cache = {}
+
+        first = cdu.compute_community_metrics(
+            graph,
+            community,
+            neighborhood_cache=neighborhood_cache,
+        )
+        self.assertEqual(first, expected)
+        self.assertTrue(neighborhood_cache)
+
+        with patch.object(
+            graph,
+            "neighbors",
+            wraps=graph.neighbors,
+        ) as neighbor_lookup:
+            cached = cdu.compute_community_metrics(
+                graph,
+                community,
+                neighborhood_cache=neighborhood_cache,
+            )
+
+        self.assertEqual(cached, expected)
+        neighbor_lookup.assert_not_called()
+
+        label_cache = {}
+        expected_label = cdu.compute_label_metrics(graph, label=0)
+        first_label = cdu.compute_label_metrics(
+            graph,
+            label=0,
+            neighborhood_cache=label_cache,
+        )
+        self.assertEqual(first_label, expected_label)
+
+        with patch.object(
+            graph,
+            "neighbors",
+            wraps=graph.neighbors,
+        ) as neighbor_lookup:
+            cached_label = cdu.compute_label_metrics(
+                graph,
+                label=0,
+                neighborhood_cache=label_cache,
+            )
+
+        self.assertEqual(cached_label, expected_label)
+        neighbor_lookup.assert_not_called()
+
     def test_sensitivity_reuses_lrc_and_flow_across_orc_percentages(self) -> None:
         """Check shared LRC/flow call counts, output order, and runtime totals."""
         graph = self.make_graph()

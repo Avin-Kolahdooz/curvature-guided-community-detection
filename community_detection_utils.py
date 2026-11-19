@@ -17,7 +17,21 @@ import time
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Hashable, Iterable, Iterator, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Hashable,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 import igraph as ig
 import leidenalg
@@ -1227,12 +1241,21 @@ def label_structure_stats(
 def compute_community_metrics(
     graph: nx.Graph,
     nodes: Iterable[Node],
+    neighborhood_cache: Optional[MutableMapping[Node, Set[Node]]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Compute structural metrics for an explicitly supplied community."""
+    """Compute structural metrics for an explicitly supplied community.
+
+    A caller may pass a mutable neighborhood cache to reuse neighbor sets
+    across communities. The cache is populated on demand and is valid only
+    while the graph topology remains unchanged.
+    """
     community = {node for node in nodes if node in graph}
 
     if len(community) == 0:
         return None
+
+    if neighborhood_cache is None:
+        neighborhood_cache = {}
 
     internal_edges = 0
     boundary_edges = 0
@@ -1240,11 +1263,15 @@ def compute_community_metrics(
     internal_triangles = 0
 
     for u in community:
-        neighbors_u = set(graph.neighbors(u))
+        if u not in neighborhood_cache:
+            neighborhood_cache[u] = set(graph.neighbors(u))
+        neighbors_u = neighborhood_cache[u]
 
         for v in neighbors_u:
             if u < v:
-                neighbors_v = set(graph.neighbors(v))
+                if v not in neighborhood_cache:
+                    neighborhood_cache[v] = set(graph.neighbors(v))
+                neighbors_v = neighborhood_cache[v]
                 common = len(neighbors_u & neighbors_v)
 
                 if v in community:
@@ -1283,6 +1310,7 @@ def compute_label_metrics(
     graph: nx.Graph,
     label: Any,
     label_attribute: str = "label_gt",
+    neighborhood_cache: Optional[MutableMapping[Node, Set[Node]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Compute structural metrics for one ground-truth label."""
     community = {
@@ -1294,7 +1322,11 @@ def compute_label_metrics(
     if len(community) == 0:
         return None
 
-    result = compute_community_metrics(graph, community)
+    result = compute_community_metrics(
+        graph,
+        community,
+        neighborhood_cache=neighborhood_cache,
+    )
 
     if result is None:
         return None
