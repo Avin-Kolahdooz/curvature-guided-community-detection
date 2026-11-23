@@ -1893,3 +1893,934 @@ __all__ = [
     "estimate_empirical_pin_pout",
     "run_real_dataset_heatmap",
 ]
+
+# ============================================================
+# 13. SHARED HEATMAP AND BASELINE UTILITIES
+# ============================================================
+
+def restore_reference_nodes(graph, reference_graph):
+    """Restore missing nodes without restoring removed edges."""
+    if not set(graph).issubset(set(reference_graph)):
+        raise ValueError("Graph contains unknown nodes.")
+
+    result = graph.copy()
+    for node, attrs in reference_graph.nodes(data=True):
+        if node not in result:
+            result.add_node(node, **attrs)
+        else:
+            for key, value in attrs.items():
+                result.nodes[node].setdefault(key, value)
+    return result
+
+
+def prepare_pruning_configuration(
+    graph, lrc_pct, orc_pct, *, alpha=0.5, iterations=5,
+    method="Sinkhorn", weight="weight", preserve_nodes=True
+):
+    """Original / LRC-only / ORC-RF-only / Hybrid."""
+
+    lrc_pct = float(lrc_pct)
+    orc_pct = float(orc_pct)
+
+    if not (0 <= lrc_pct <= 100 and 0 <= orc_pct <= 100):
+        raise ValueError("Pruning percentages must be in [0, 100].")
+
+    if lrc_pct == 0 and orc_pct == 0:
+        info = dict(
+            method_base="Original",
+            graph=graph.copy(),
+            prep_time=0.0,
+            removed_lrc=0,
+            removed_orc=0,
+            pct_lrc=0.0,
+            pct_orc=0.0,
+            alpha=np.nan,
+            iterations=0,
+            cutoff_lrc=np.nan,
+            cutoff_orc=np.nan
+        )
+
+    elif orc_pct == 0:
+        info = prepare_lrc_graph(graph, lrc_pct=lrc_pct)
+
+    elif lrc_pct == 0:
+        info = prepare_orc_graph(
+            graph, orc_pct=orc_pct,
+            alpha=alpha, iterations=iterations,
+            method=method, weight=weight
+        )
+
+    else:
+        info = prepare_combo_graph(
+            graph, lrc_pct=lrc_pct, orc_pct=orc_pct,
+            alpha=alpha, iterations=iterations,
+            method=method, weight=weight
+        )
+
+    if preserve_nodes:
+        info = {
+            **info,
+            "graph": restore_reference_nodes(info["graph"], graph)
+        }
+
+    return info
+
+
+def _shared_eval(
+    graph, reference_graph, algorithm, seed,
+    label_attribute="label_gt", weight="weight"
+):
+    """Evaluate on the same labeled nodes for every method."""
+
+    eval_nodes = [
+        node for node in reference_graph
+        if label_attribute in reference_graph.nodes[node]
+    ]
+
+    if len(eval_nodes) < 2:
+        raise ValueError("At least two labeled nodes required.")
+
+    start = time.perf_counter()
+
+    if algorithm.lower() == "louvain":
+        partition = run_louvain(
+            graph, seed=int(seed), weight=weight
+        )
+    elif algorithm.lower() == "leiden":
+        partition = run_leiden(
+            graph, seed=int(seed), weight=weight
+        )
+    else:
+        raise ValueError(f"Unknown algorithm: {algorithm}")
+
+    cluster_time = time.perf_counter() - start
+
+    if not all(node in partition for node in eval_nodes):
+        raise ValueError("Partition does not contain all labeled nodes.")
+
+    y_true = [
+        reference_graph.nodes[node][label_attribute]
+        for node in eval_nodes
+    ]
+    y_pred = [partition[node] for node in eval_nodes]
+
+    return (
+        float(adjusted_rand_score(y_true, y_pred)),
+        float(normalized_mutual_info_score(y_true, y_pred)),
+        float(cluster_time),
+        len(eval_nodes)
+    )
+
+
+# ============================================================
+# SHARED HEATMAP
+# ============================================================
+
+def run_shared_pruning_heatmap(
+    graph, *, dataset_name,
+    lrc_values=(0, 2, 5, 10, 20, 30),
+    orc_values=(0, 2, 5, 10, 20, 30),
+    alpha=0.5, iterations=5,
+    seeds=(0, 1, 2, 3, 4, 42),
+    label_attribute="label_gt",
+    weight="weight",
+    preserve_nodes=True,
+    verbose=True
+):
+    """Heatmap runtime includes preprocessing only."""
+
+    rows = []
+
+    for lrc_pct in lrc_values:
+        for orc_pct in orc_values:
+
+            try:
+                info = prepare_pruning_configuration(
+                    graph, lrc_pct, orc_pct,
+                    alpha=alpha,
+                    iterations=iterations,
+                    weight=weight,
+                    preserve_nodes=preserve_nodes
+                )
+
+                for seed in seeds:
+                    ari, nmi, cluster_time, n_eval = _shared_eval(
+                        info["graph"], graph, "Louvain", seed,
+                        label_attribute=label_attribute,
+                        weight=weight
+                    )
+
+                    rows.append(dict(
+                        Dataset=dataset_name,
+                        seed=int(seed),
+                        lrc_pct=float(lrc_pct),
+                        orc_pct=float(orc_pct),
+                        alpha=float(alpha),
+                        ARI=ari,
+                        NMI=nmi,
+                        Runtime=float(info["prep_time"]),
+                        Prep_time=float(info["prep_time"]),
+                        Community_time=cluster_time,
+                        V=info["graph"].number_of_nodes(),
+                        E=info["graph"].number_of_edges(),
+                        n_eval=n_eval,
+                        status="ok",
+                        error=""
+                    ))
+
+            except Exception as exc:
+                if verbose:
+                    print(
+                        f"{dataset_name}: LRC={lrc_pct}, "
+                        f"ORC={orc_pct} FAILED: {exc!r}"
+                    )
+
+                for seed in seeds:
+                    rows.append(dict(
+                        Dataset=dataset_name,
+                        seed=int(seed),
+                        lrc_pct=float(lrc_pct),
+                        orc_pct=float(orc_pct),
+                        alpha=float(alpha),
+                        ARI=np.nan,
+                        NMI=np.nan,
+                        Runtime=np.nan,
+                        Prep_time=np.nan,
+                        Community_time=np.nan,
+                        V=np.nan,
+                        E=np.nan,
+                        n_eval=np.nan,
+                        status="failed",
+                        error=repr(exc)
+                    ))
+
+            else:
+                if verbose:
+                    print(
+                        f"{dataset_name}: LRC={lrc_pct:g}%, "
+                        f"ORC={orc_pct:g}% | "
+                        f"Tprep={info['prep_time']:.3f}s"
+                    )
+
+    raw = pd.DataFrame(rows)
+    valid = raw.loc[raw["status"] == "ok"].copy()
+
+    if valid.empty:
+        raise RuntimeError(
+            "No successful heatmap configurations."
+        )
+
+    summary = valid.groupby(
+        ["lrc_pct", "orc_pct"], as_index=False
+    ).agg(
+        ARI_mean=("ARI", "mean"),
+        ARI_std=("ARI", "std"),
+        NMI_mean=("NMI", "mean"),
+        NMI_std=("NMI", "std"),
+        Runtime_mean=("Prep_time", "mean"),
+        Runtime_std=("Prep_time", "std"),
+        Prep_time_mean=("Prep_time", "mean"),
+        Community_time_mean=("Community_time", "mean"),
+        V_mean=("V", "mean"),
+        E_mean=("E", "mean"),
+        n_eval_mean=("n_eval", "mean"),
+        n_runs=("seed", "count")
+    )
+
+    return raw, summary
+
+
+def plot_shared_pruning_heatmap(
+    summary, *, dataset_name, metric,
+    lrc_values, orc_values,
+    pin=None, pout=None,
+    figsize=(9, 7),
+    runtime_column="Prep_time_mean"
+):
+    """Plot accuracy and pipeline-only runtime."""
+
+    key = {
+        "ARI": "ARI_mean",
+        "NMI": "NMI_mean"
+    }[metric]
+
+    matrix = summary.pivot(
+        index="lrc_pct",
+        columns="orc_pct",
+        values=key
+    ).reindex(
+        index=list(map(float, lrc_values)),
+        columns=list(map(float, orc_values))
+    )
+
+    runtime = summary.pivot(
+        index="lrc_pct",
+        columns="orc_pct",
+        values=runtime_column
+    ).reindex(
+        index=list(map(float, lrc_values)),
+        columns=list(map(float, orc_values))
+    )
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    im = ax.imshow(
+        np.ma.masked_invalid(matrix.to_numpy(dtype=float)),
+        vmin=-0.5 if metric == "ARI" else 0,
+        vmax=1,
+        aspect="auto"
+    )
+
+    ax.set_xticks(
+        range(len(orc_values)),
+        [f"{p:g}%" for p in orc_values]
+    )
+    ax.set_yticks(
+        range(len(lrc_values)),
+        [f"{p:g}%" for p in lrc_values]
+    )
+
+    ax.set_xlabel("ORC pruning ratio (%)")
+    ax.set_ylabel("LRC pruning ratio (%)")
+
+    title = f"{dataset_name}: Joint LRC–ORC Sensitivity ({metric})"
+
+    if pin is not None and pout is not None:
+        title += (
+            f"\nempirical $\\hat{{p}}_{{in}}={pin:.4f}$, "
+            f"$\\hat{{p}}_{{out}}={pout:.4f}$"
+        )
+
+    ax.set_title(title)
+
+    for i in range(len(lrc_values)):
+        for j in range(len(orc_values)):
+            value = matrix.iat[i, j]
+            seconds = runtime.iat[i, j]
+
+            if np.isfinite(value) and np.isfinite(seconds):
+                label = (
+                    f"{metric}={value:.3f}\n"
+                    f"Tprep={seconds:.2f}s"
+                )
+            else:
+                label = "failed"
+
+            ax.text(
+                j, i, label,
+                ha="center", va="center", fontsize=8
+            )
+
+    fig.colorbar(im, ax=ax).set_label(f"Mean {metric}")
+    fig.tight_layout()
+
+    return fig
+
+
+# ============================================================
+# SHARED PRUNING BASELINES
+# ============================================================
+
+def prune_exact_edge_budget(
+    graph, k, criterion, *, seed=42
+):
+    """Remove exactly k edges; preserve all nodes."""
+
+    result = graph.copy()
+    edges = list(result.edges())
+    k = int(k)
+
+    if not (0 <= k <= len(edges)):
+        raise ValueError("Invalid edge removal count.")
+
+    if k == 0:
+        return result
+
+    rng = np.random.default_rng(seed)
+
+    if criterion == "Random":
+        chosen = rng.choice(len(edges), k, replace=False)
+
+    else:
+        if criterion == "LRC":
+            compute_LRC(result, attribute="LRC")
+
+        neighbors = {
+            node: set(result.neighbors(node))
+            for node in result.nodes()
+        }
+
+        scores = []
+
+        for u, v in edges:
+            common = len(neighbors[u] & neighbors[v])
+
+            if criterion == "LRC":
+                score = result[u][v]["LRC"]
+
+            elif criterion == "Jaccard":
+                union = len(neighbors[u] | neighbors[v])
+                score = common / union if union else 0.0
+
+            elif criterion == "Triangle":
+                score = float(common)
+
+            elif criterion == "Forman":
+                # Triangle-augmented unweighted Forman proxy
+                score = float(
+                    4 - len(neighbors[u])
+                    - len(neighbors[v])
+                    + 3 * common
+                )
+
+            else:
+                raise ValueError(f"Unknown criterion: {criterion}")
+
+            scores.append(score)
+
+        scores = np.asarray(scores, dtype=float)
+
+        if not np.isfinite(scores).all():
+            raise ValueError("Non-finite edge scores.")
+
+        chosen = np.lexsort(
+            (rng.random(len(edges)), scores)
+        )[:k]
+
+    result.remove_edges_from(
+        [edges[int(index)] for index in chosen]
+    )
+
+    return result
+
+
+def prune_orc_exact_edge_budget(
+    graph, k, *,
+    alpha=0.5,
+    iterations=5,
+    use_flow=True,
+    seed=42,
+    method="Sinkhorn",
+    weight="weight"
+):
+    """ORC on GCC; exactly k edges removed."""
+
+    output = graph.copy()
+    k = int(k)
+
+    if k == 0 and output.number_of_edges() == 0:
+        return output
+
+    gcc = get_gcc(output)
+
+    if not (0 <= k <= gcc.number_of_edges()):
+        raise ValueError(
+            "ORC removal budget exceeds GCC edge count."
+        )
+
+    if use_flow:
+        processed = run_orc_flow_gcc(
+            gcc, alpha=alpha,
+            iterations=iterations,
+            method=method,
+            weight=weight
+        )
+    else:
+        processed = run_orc_no_flow(
+            gcc, alpha=alpha,
+            method=method,
+            weight=weight
+        )
+
+    original_edges = set(
+        map(frozenset, gcc.edges())
+    )
+    processed_edges = set(
+        map(frozenset, processed.edges())
+    )
+
+    if (
+        set(processed.nodes()) != set(gcc.nodes())
+        or processed_edges != original_edges
+    ):
+        raise RuntimeError(
+            "ORC changed graph topology before pruning."
+        )
+
+    for u, v, attrs in processed.edges(data=True):
+        output[u][v].update(attrs)
+
+    if k:
+        edges = list(processed.edges())
+        scores = np.asarray([
+            processed[u][v].get("ricciCurvature", np.nan)
+            for u, v in edges
+        ], dtype=float)
+
+        if not np.isfinite(scores).all():
+            raise ValueError("Invalid ORC curvature values.")
+
+        rng = np.random.default_rng(seed)
+
+        chosen = np.lexsort(
+            (rng.random(len(edges)), scores)
+        )[:k]
+
+        output.remove_edges_from(
+            [edges[int(index)] for index in chosen]
+        )
+
+    return output
+
+
+# ============================================================
+# SHARED BASELINE AND ABLATION COMPARISON
+# ============================================================
+
+def run_shared_baseline_comparison(
+    graph, *, prepared_info, dataset_name,
+    seeds=(0, 1, 2, 3, 4, 42),
+    alpha=0.5,
+    iterations=5,
+    lrc_pct=2.5,
+    orc_pct=2.5,
+    edge_seed=42,
+    label_attribute="label_gt",
+    weight="weight",
+    verbose=True
+):
+    """Run original methods, matched baselines, and ablations.
+
+    TotalTime = PrepTime + ClusterTime.
+    """
+
+    required = {
+        "LRC_only",
+        "ORC_RF_only",
+        "Hybrid_LRC_ORC_RF"
+    }
+
+    if not required.issubset(prepared_info):
+        raise ValueError(
+            "Missing required prepared_info methods."
+        )
+
+    original = graph.copy()
+    n_edges = original.number_of_edges()
+
+    if n_edges == 0:
+        raise ValueError("The graph has no edges.")
+
+    for u, v in original.edges():
+        original[u][v].setdefault(weight, 1.0)
+
+    graphs = {"Original": original}
+    prep_times = {"Original": 0.0}
+
+    for name in (
+        "LRC_only",
+        "ORC_RF_only",
+        "Hybrid_LRC_ORC_RF"
+    ):
+        info = prepared_info[name]
+
+        graphs[name] = restore_reference_nodes(
+            info["graph"], original
+        )
+        prep_times[name] = float(info["prep_time"])
+
+    hybrid_edges = graphs[
+        "Hybrid_LRC_ORC_RF"
+    ].number_of_edges()
+
+    total_remove = n_edges - hybrid_edges
+
+    lrc_remove = int(
+        prepared_info["Hybrid_LRC_ORC_RF"]["removed_lrc"]
+    )
+
+    if not (0 <= lrc_remove <= total_remove):
+        raise ValueError("Inconsistent Hybrid removal budget.")
+
+    def register(name, builder):
+        if verbose:
+            print("Preparing", name, "...")
+
+        start = time.perf_counter()
+        prepared_graph = restore_reference_nodes(
+            builder(), original
+        )
+        elapsed = time.perf_counter() - start
+
+        if set(prepared_graph) != set(original):
+            raise RuntimeError("Node mismatch: " + name)
+
+        graphs[name] = prepared_graph
+        prep_times[name] = elapsed
+
+        if verbose:
+            print(
+                f"  Edges={prepared_graph.number_of_edges()}, "
+                f"PrepTime={elapsed:.4f}s"
+            )
+
+    for criterion in (
+        "Random",
+        "Jaccard",
+        "Triangle",
+        "Forman",
+        "LRC"
+    ):
+        register(
+            f"{criterion}_only_matched",
+            lambda c=criterion: prune_exact_edge_budget(
+                original, total_remove, c,
+                seed=edge_seed
+            )
+        )
+
+    register(
+        "ORC_RF_only_matched",
+        lambda: prune_orc_exact_edge_budget(
+            original, total_remove,
+            alpha=alpha,
+            iterations=iterations,
+            seed=edge_seed,
+            weight=weight
+        )
+    )
+
+    for criterion in ("Random", "Jaccard", "Forman"):
+
+        def build_two_stage(c=criterion):
+            first = prune_exact_edge_budget(
+                original, lrc_remove, c,
+                seed=edge_seed
+            )
+            second_remove = (
+                first.number_of_edges() - hybrid_edges
+            )
+            return prune_orc_exact_edge_budget(
+                first, second_remove,
+                alpha=alpha,
+                iterations=iterations,
+                seed=edge_seed,
+                weight=weight
+            )
+
+        register(
+            f"{criterion}_ORC_RF",
+            build_two_stage
+        )
+
+    register(
+        "Hybrid_without_flow",
+        lambda: prepare_combo_graph(
+            original,
+            lrc_pct=lrc_pct,
+            orc_pct=orc_pct,
+            alpha=alpha,
+            iterations=iterations,
+            method="Sinkhorn",
+            weight=weight,
+            use_ricci_flow=False
+        )["graph"]
+    )
+
+    def unit_weight_graph():
+        result = graphs[
+            "Hybrid_LRC_ORC_RF"
+        ].copy()
+        nx.set_edge_attributes(result, 1.0, weight)
+        return result
+
+    register("Hybrid_unit_weights", unit_weight_graph)
+
+    prep_times["Hybrid_unit_weights"] += (
+        prep_times["Hybrid_LRC_ORC_RF"]
+    )
+
+    rows = []
+
+    for method_name, prepared_graph in graphs.items():
+        for algorithm in ("Louvain", "Leiden"):
+            for seed in seeds:
+
+                ari, nmi, cluster_time, n_eval = _shared_eval(
+                    prepared_graph,
+                    original,
+                    algorithm,
+                    seed,
+                    label_attribute=label_attribute,
+                    weight=weight
+                )
+
+                rows.append(dict(
+                    Dataset=dataset_name,
+                    Method=method_name,
+                    Algorithm=algorithm,
+                    Seed=int(seed),
+                    ARI=ari,
+                    NMI=nmi,
+                    PrepTime=prep_times[method_name],
+                    ClusterTime=cluster_time,
+                    TotalTime=(
+                        prep_times[method_name] + cluster_time
+                    ),
+                    OriginalEdges=n_edges,
+                    RemainingEdges=prepared_graph.number_of_edges(),
+                    RemovedEdges=(
+                        n_edges - prepared_graph.number_of_edges()
+                    ),
+                    EvaluatedNodes=n_eval,
+                    Components=nx.number_connected_components(
+                        prepared_graph
+                    ),
+                    IsolatedNodes=nx.number_of_isolates(
+                        prepared_graph
+                    )
+                ))
+
+        if verbose:
+            print("Evaluated:", method_name)
+
+    raw = pd.DataFrame(rows)
+
+    summary = raw.groupby(
+        ["Method", "Algorithm"], as_index=False
+    ).agg(
+        ARI_mean=("ARI", "mean"),
+        ARI_std=("ARI", "std"),
+        NMI_mean=("NMI", "mean"),
+        NMI_std=("NMI", "std"),
+        Time_mean=("TotalTime", "mean"),
+        Time_std=("TotalTime", "std"),
+        PrepTime=("PrepTime", "first"),
+        ClusterTime_mean=("ClusterTime", "mean"),
+        Edges=("RemainingEdges", "first"),
+        Nodes=("EvaluatedNodes", "first"),
+        Components=("Components", "first"),
+        IsolatedNodes=("IsolatedNodes", "first")
+    ).sort_values(
+        ["Algorithm", "ARI_mean"],
+        ascending=[True, False]
+    ).reset_index(drop=True)
+
+    if not np.allclose(
+        summary["Time_mean"],
+        summary["PrepTime"] + summary["ClusterTime_mean"]
+    ):
+        raise RuntimeError("Runtime accounting mismatch.")
+
+    return raw, summary
+
+
+# ============================================================
+# SAVE BASELINE TABLES AND FIGURES
+# ============================================================
+
+def save_shared_baseline_outputs(
+    raw, summary, *,
+    output_dir, dataset_name,
+    show_plots=True
+):
+    """Save tables, LaTeX, and two runtime figures."""
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    raw.to_csv(
+        output_dir / "all_baseline_runs.csv",
+        index=False
+    )
+    summary.to_csv(
+        output_dir / "baseline_summary.csv",
+        index=False
+    )
+
+    wide = raw.pivot(
+        index=["Seed", "Algorithm"],
+        columns="Method",
+        values=[
+            "ARI", "NMI",
+            "TotalTime", "RemainingEdges"
+        ]
+    )
+
+    wide.columns = [
+        f"{method}__{metric}"
+        for metric, method in wide.columns
+    ]
+
+    wide.reset_index().to_csv(
+        output_dir / "side_by_side_columns.csv",
+        index=False
+    )
+
+    paper = summary.assign(
+        ARI=summary.apply(
+            lambda r: f"{r.ARI_mean:.3f} ± {r.ARI_std:.3f}",
+            axis=1
+        ),
+        NMI=summary.apply(
+            lambda r: f"{r.NMI_mean:.3f} ± {r.NMI_std:.3f}",
+            axis=1
+        ),
+        **{
+            "PrepTime (s)": summary["PrepTime"].round(4),
+            "ClusterTime (s)": summary["ClusterTime_mean"].round(4),
+            "Total Runtime (s)": summary.apply(
+                lambda r: (
+                    f"{r.Time_mean:.3f} ± {r.Time_std:.3f}"
+                ),
+                axis=1
+            )
+        }
+    )[
+        [
+            "Method", "Algorithm", "ARI", "NMI",
+            "PrepTime (s)", "ClusterTime (s)",
+            "Total Runtime (s)", "Edges", "Nodes"
+        ]
+    ]
+
+    paper.to_csv(
+        output_dir / "paper_ready_comparison.csv",
+        index=False
+    )
+
+    paper.to_latex(
+        output_dir / "paper_ready_comparison.tex",
+        index=False,
+        escape=True,
+        caption=(
+            f"{dataset_name} baseline comparison: "
+            "preparation plus clustering."
+        ),
+        label=f"tab:{dataset_name.lower().replace(' ', '_')}_baselines"
+    )
+
+    # Accuracy vs total runtime
+    fig, axes = plt.subplots(
+        1, 2, figsize=(17, 7), sharey=True
+    )
+
+    for ax, algorithm in zip(
+        axes, ("Louvain", "Leiden")
+    ):
+        group = summary.loc[
+            summary.Algorithm == algorithm
+        ]
+
+        for i, (_, row) in enumerate(group.iterrows()):
+            hybrid = (
+                row.Method == "Hybrid_LRC_ORC_RF"
+            )
+
+            ax.scatter(
+                row.Time_mean,
+                row.ARI_mean,
+                s=190 if hybrid else 60,
+                marker="*" if hybrid else "o"
+            )
+
+            ax.annotate(
+                row.Method,
+                (row.Time_mean, row.ARI_mean),
+                xytext=(5, 7 if i % 2 else -10),
+                textcoords="offset points",
+                fontsize=7
+            )
+
+        ax.set_xscale("log")
+        ax.set_title(
+            f"{dataset_name} — {algorithm}"
+        )
+        ax.set_xlabel(
+            "Mean Total Runtime (seconds, log scale)"
+        )
+        ax.grid(alpha=0.25)
+
+    axes[0].set_ylabel("Mean ARI")
+    fig.tight_layout()
+
+    fig.savefig(
+        output_dir / "accuracy_vs_runtime.png",
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    if show_plots:
+        from IPython.display import display
+        display(fig)
+
+    plt.close(fig)
+
+    # Runtime breakdown
+    fig, axes = plt.subplots(
+        1, 2, figsize=(17, 8)
+    )
+
+    for ax, algorithm in zip(
+        axes, ("Louvain", "Leiden")
+    ):
+        group = summary.loc[
+            summary.Algorithm == algorithm
+        ].sort_values("Time_mean")
+
+        positions = np.arange(len(group))
+
+        ax.barh(
+            positions,
+            group.PrepTime,
+            label="Preparation"
+        )
+
+        ax.barh(
+            positions,
+            group.ClusterTime_mean,
+            left=group.PrepTime,
+            label="Community detection"
+        )
+
+        ax.set_yticks(positions)
+        ax.set_yticklabels(
+            group.Method, fontsize=8
+        )
+        ax.set_xlabel(
+            "Mean Total Runtime (seconds)"
+        )
+        ax.set_title(algorithm)
+        ax.legend(loc="lower right")
+
+    fig.tight_layout()
+
+    fig.savefig(
+        output_dir / "runtime_breakdown.png",
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    if show_plots:
+        from IPython.display import display
+        display(fig)
+
+    plt.close(fig)
+
+    return paper
+
+
+# ============================================================
+# PUBLIC FUNCTIONS
+# ============================================================
+
+__all__.extend([
+    "restore_reference_nodes",
+    "prepare_pruning_configuration",
+    "run_shared_pruning_heatmap",
+    "plot_shared_pruning_heatmap",
+    "prune_exact_edge_budget",
+    "prune_orc_exact_edge_budget",
+    "run_shared_baseline_comparison",
+    "save_shared_baseline_outputs"
+])
