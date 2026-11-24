@@ -1122,52 +1122,78 @@ def label_structure_stats(
     }, label_counts
 
 
+
 def compute_community_metrics(
     graph: nx.Graph,
     nodes: Iterable[Node],
+    *,
+    total_edges: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
+    """Undirected community metrics with correct cut-edge counts."""
 
     community = {
         node for node in nodes if node in graph
     }
 
-    if len(community) == 0:
+    if not community:
         return None
 
     internal_edges = 0
     boundary_edges = 0
-    boundary_triangles = 0
     internal_triangles = 0
+    boundary_triangles = 0
+    counted_internal = set()
 
     for u in community:
         neighbors_u = set(graph.neighbors(u))
 
         for v in neighbors_u:
-            if u < v:
-                neighbors_v = set(graph.neighbors(v))
-                common = len(
-                    neighbors_u & neighbors_v
+
+            if v in community:
+                edge_key = frozenset((u, v))
+
+                if edge_key in counted_internal:
+                    continue
+
+                counted_internal.add(edge_key)
+                internal_edges += 1
+
+                internal_triangles += len(
+                    neighbors_u & set(graph.neighbors(v))
                 )
 
-                if v in community:
-                    internal_edges += 1
-                    internal_triangles += common
-                else:
-                    boundary_edges += 1
-                    boundary_triangles += common
+            else:
+                boundary_edges += 1
 
-    volume = (
-        2 * internal_edges + boundary_edges
+                boundary_triangles += len(
+                    neighbors_u & set(graph.neighbors(v))
+                )
+
+    volume_s = 2 * internal_edges + boundary_edges
+
+    m = (
+        graph.number_of_edges()
+        if total_edges is None
+        else total_edges
+    )
+
+    volume_complement = 2 * m - volume_s
+
+    denominator = min(
+        volume_s,
+        volume_complement
     )
 
     conductance = (
-        boundary_edges / volume
-        if volume > 0 else np.nan
+        boundary_edges / denominator
+        if denominator > 0
+        else np.nan
     )
 
     btd = (
         boundary_triangles / boundary_edges
-        if boundary_edges > 0 else np.nan
+        if boundary_edges > 0
+        else np.nan
     )
 
     return {
@@ -2188,7 +2214,7 @@ def plot_shared_pruning_heatmap(
     if pin is not None and pout is not None:
         title += (
             f"\nempirical $\\hat{{p}}_{{in}}={pin:.4f}$, "
-            f"$\\hat{{p}}_{{out}}={pout:.4f}$"
+            f"$\\hat{{p}}_{{out}}={pout:.2e}$"
         )
 
     ax.set_title(title)
@@ -2824,3 +2850,308 @@ __all__.extend([
     "run_shared_baseline_comparison",
     "save_shared_baseline_outputs"
 ])
+
+
+# ============================================================
+# SHARED BASELINE VISUALIZATION — PNG ONLY
+# ============================================================
+
+def plot_shared_baseline_figures(
+    summary,
+    *,
+    dataset_name,
+    output_dir=None,
+    show=True,
+    annotate_methods=(
+        "Original",
+        "LRC_only",
+        "ORC_RF_only",
+        "Hybrid_LRC_ORC_RF",
+        "Random_ORC_RF",
+    ),
+):
+    """Plot baseline accuracy and runtime without CSV/LaTeX."""
+
+    if summary.empty:
+        raise ValueError("Baseline summary is empty.")
+
+    required = {
+        "Method", "Algorithm", "ARI_mean", "Time_mean",
+        "PrepTime", "ClusterTime_mean",
+    }
+
+    missing = required - set(summary.columns)
+
+    if missing:
+        raise KeyError(
+            f"Missing baseline columns: {sorted(missing)}"
+        )
+
+    output_path = (
+        Path(output_dir)
+        if output_dir is not None
+        else None
+    )
+
+    if output_path is not None:
+        output_path.mkdir(parents=True, exist_ok=True)
+
+    # --------------------------------------------------------
+    # Accuracy versus total runtime
+    # --------------------------------------------------------
+
+    fig, axes = plt.subplots(
+        1, 2, figsize=(14, 6), sharey=True
+    )
+
+    for ax, algorithm in zip(
+        axes, ("Louvain", "Leiden")
+    ):
+        subset = summary.loc[
+            summary["Algorithm"] == algorithm
+        ]
+
+        for _, result in subset.iterrows():
+            is_hybrid = (
+                result["Method"] == "Hybrid_LRC_ORC_RF"
+            )
+
+            ax.scatter(
+                result["Time_mean"],
+                result["ARI_mean"],
+                marker="*" if is_hybrid else "o",
+                s=125 if is_hybrid else 40,
+                alpha=0.9,
+            )
+
+            if result["Method"] in annotate_methods:
+                ax.annotate(
+                    result["Method"],
+                    (
+                        result["Time_mean"],
+                        result["ARI_mean"]
+                    ),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=8,
+                )
+
+        if (
+            not subset.empty
+            and (subset["Time_mean"] > 0).all()
+        ):
+            ax.set_xscale("log")
+
+        ax.set_title(f"{dataset_name} — {algorithm}")
+        ax.set_xlabel("Mean total runtime (seconds)")
+        ax.grid(alpha=0.25)
+
+    axes[0].set_ylabel("Mean ARI")
+    fig.tight_layout()
+
+    if output_path is not None:
+        fig.savefig(
+            output_path / "accuracy_vs_runtime.png",
+            dpi=300,
+            bbox_inches="tight"
+        )
+
+    if show:
+        from IPython.display import display
+        display(fig)
+
+    plt.close(fig)
+
+    # --------------------------------------------------------
+    # Preparation versus clustering runtime
+    # --------------------------------------------------------
+
+    fig, axes = plt.subplots(1, 2, figsize=(15, 9))
+
+    for ax, algorithm in zip(
+        axes, ("Louvain", "Leiden")
+    ):
+        subset = summary.loc[
+            summary["Algorithm"] == algorithm
+        ].sort_values("Time_mean")
+
+        positions = np.arange(len(subset))
+
+        ax.barh(
+            positions,
+            subset["PrepTime"],
+            label="Preparation"
+        )
+
+        ax.barh(
+            positions,
+            subset["ClusterTime_mean"],
+            left=subset["PrepTime"],
+            label="Clustering"
+        )
+
+        ax.set_yticks(positions)
+        ax.set_yticklabels(
+            subset["Method"], fontsize=8
+        )
+
+        ax.set_title(f"{dataset_name} — {algorithm}")
+        ax.set_xlabel("Mean total runtime (seconds)")
+        ax.grid(axis="x", alpha=0.25)
+        ax.legend(loc="lower right")
+
+    fig.tight_layout()
+
+    if output_path is not None:
+        fig.savefig(
+            output_path / "runtime_breakdown.png",
+            dpi=300,
+            bbox_inches="tight"
+        )
+
+    if show:
+        from IPython.display import display
+        display(fig)
+
+    plt.close(fig)
+
+
+__all__.append("plot_shared_baseline_figures")
+
+# ============================================================
+# SHARED BASELINE FIGURES — AMAZON / DBLP / OTHER DATASETS
+# ============================================================
+
+def plot_shared_baseline_figures(
+    summary, *, dataset_name, output_dir=None, show=True
+):
+    """Display and optionally save baseline figures; no CSV or LaTeX."""
+    from pathlib import Path
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    required = {
+        "Method", "Algorithm", "ARI_mean", "Time_mean",
+        "PrepTime", "ClusterTime_mean",
+    }
+    missing = required - set(summary.columns)
+    if missing:
+        raise KeyError(f"Missing columns: {sorted(missing)}")
+    if summary.empty:
+        raise ValueError("Baseline summary is empty")
+
+    output_path = Path(output_dir) if output_dir is not None else None
+    if output_path is not None:
+        output_path.mkdir(parents=True, exist_ok=True)
+
+    algorithms = ("Louvain", "Leiden")
+    highlight = {
+        "Original", "LRC_only", "ORC_RF_only",
+        "Hybrid_LRC_ORC_RF", "Random_ORC_RF",
+    }
+
+    # --------------------------------------------------------
+    # Figure 1: Accuracy versus total runtime
+    # --------------------------------------------------------
+
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6), sharey=True)
+
+    for ax, algorithm in zip(axes, algorithms):
+        part = summary[summary["Algorithm"] == algorithm]
+
+        for _, row in part.iterrows():
+            hybrid = row["Method"] == "Hybrid_LRC_ORC_RF"
+
+            ax.scatter(
+                row["Time_mean"],
+                row["ARI_mean"],
+                s=140 if hybrid else 45,
+                marker="*" if hybrid else "o",
+            )
+
+            if row["Method"] in highlight:
+                ax.annotate(
+                    row["Method"],
+                    (row["Time_mean"], row["ARI_mean"]),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=8,
+                )
+
+        if not part.empty and (part["Time_mean"] > 0).all():
+            ax.set_xscale("log")
+
+        ax.set_title(f"{dataset_name} — {algorithm}")
+        ax.set_xlabel("Mean total runtime (seconds)")
+        ax.grid(alpha=0.25)
+
+    axes[0].set_ylabel("Mean ARI")
+    fig.tight_layout()
+
+    if output_path is not None:
+        fig.savefig(
+            output_path / "accuracy_vs_runtime.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+    if show:
+        from IPython.display import display
+        display(fig)
+
+    plt.close(fig)
+
+    # --------------------------------------------------------
+    # Figure 2: Preparation versus clustering runtime
+    # --------------------------------------------------------
+
+    fig, axes = plt.subplots(1, 2, figsize=(15, 8))
+
+    for ax, algorithm in zip(axes, algorithms):
+        part = summary[
+            summary["Algorithm"] == algorithm
+        ].sort_values("Time_mean")
+
+        y = np.arange(len(part))
+
+        ax.barh(
+            y,
+            part["PrepTime"],
+            label="Preparation",
+        )
+
+        ax.barh(
+            y,
+            part["ClusterTime_mean"],
+            left=part["PrepTime"],
+            label="Clustering",
+        )
+
+        ax.set_yticks(y)
+        ax.set_yticklabels(part["Method"], fontsize=8)
+        ax.set_title(f"{dataset_name} — {algorithm}")
+        ax.set_xlabel("Mean total runtime (seconds)")
+        ax.grid(axis="x", alpha=0.25)
+        ax.legend()
+
+    fig.tight_layout()
+
+    if output_path is not None:
+        fig.savefig(
+            output_path / "runtime_breakdown.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+    if show:
+        from IPython.display import display
+        display(fig)
+
+    plt.close(fig)
+
+
+# Make the new function publicly available
+if "__all__" in globals():
+    if "plot_shared_baseline_figures" not in __all__:
+        __all__.append("plot_shared_baseline_figures")
+
